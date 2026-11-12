@@ -15,6 +15,13 @@ async def resume(engine, job, body):
         return job
     if job["status"] not in {"interrupted", "stopped", "failed"}:
         raise ValueError("dialogue task is not resumable")
+    if job.get("execution_protocol") == "te-dialogue-dimensions.v2":
+        # S2 has its own journal; never copy v1 analysis into it.
+        from .v2.repository import Repository
+        state = await Repository(engine, job).get("run")
+        if state and state["stage"] == "finished":
+            raise ValueError("S2 partial delivery is final; inspect pending units before creating a new job")
+        return await update(engine, job, status="preparing", ov_cancel_reason="", error="", finished_at="")
     journal = Journal(engine, job)
     state = await journal.get("summary")
     if state and state["stage"] == "finished":

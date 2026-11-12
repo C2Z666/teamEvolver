@@ -147,3 +147,5 @@ viking://user/<user>/{memories,resources,skills}
 - [Architecture](./01-architecture.md)
 - [Memory](./04-memory.md)
 - [Configuration Reference](../guides/01-configuration.md)
+
+S2 dialogue state lives in `dialogue_dimension_state`, scoped by tenant/job/state_key. Revision CAS and the Worker fence protect receipt consumption and registration. The same domain table stores configuration migration backups; startup does not run migrations.

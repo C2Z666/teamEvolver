@@ -26,9 +26,14 @@ async def restore(engine, job_id):
 async def create(engine, body, identifier):
     repository = engine.repository
     settings = engine.settings.get("settings", engine.settings.get("config", {}))
-    compiler = compiler_prompt(settings)
+    compiler = engine.settings.get("compiler_body_snapshot") or compiler_prompt(settings)
     from .dialogue_dimensions import PROTOCOL
-    dialogue = PROTOCOL in compiler
+    from .dialogue_dimensions.v2 import PROTOCOL as S2_PROTOCOL
+    from .dialogue_dimensions.v2.compiler import sections
+    s2 = S2_PROTOCOL in compiler
+    if s2:
+        sections(compiler)
+    dialogue = PROTOCOL in compiler or s2
     dialogue_config = None
     # The operation identity, rather than a process-local random value, binds
     # recovery after a lost acknowledgement to the same business job.
@@ -58,13 +63,40 @@ async def create(engine, body, identifier):
         from .dialogue_dimensions.orchestration import frozen_read
         from .dialogue_dimensions.partition import options
         if not source_uri.endswith("/model_cases"):
-            raise ValueError("对话维度 Skill 需要准备后的 model_cases 知识源")
+            if not s2:
+                raise ValueError("对话维度 Skill 需要准备后的 model_cases 知识源")
+            from .dialogue_dimensions.preparation import execute as prepare_raw
+            from .mining_contracts import validate_descendant
+            raw_uri = body.get("raw_dialogue_uri")
+            raw_input = body.get("dialogue_input")
+            if not raw_uri and not raw_input:
+                tree = await engine._knowledge_tree(record["account"], source_uri)
+                files = [row for row in tree.get("entries", []) if not row.get("is_dir")]
+                if len(files) == 1 and str(files[0].get("uri", "")).endswith(".jsonl"):
+                    raw_uri = files[0]["uri"]
+            if not raw_uri and not raw_input:
+                raise ValueError("S2 需要白名单对话 model_cases，或同知识源下的 raw_dialogue_uri JSONL 原始文件")
+            if raw_input is not None:
+                allowed = {"format", "filename", "content_base64", "dataset_namespace"}
+                if not isinstance(raw_input, dict) or set(raw_input) - allowed:
+                    raise ValueError("dialogue_input requires format, filename, content_base64 and dataset_namespace")
+                preparation = dict(raw_input)
+            else:
+                validate_descendant(source_uri, raw_uri, allow_root=False)
+                preparation = {"source_uri": raw_uri, "format": "jsonl"}
+            prepared = await prepare_raw(engine, {**preparation,
+                "output_uri": f"{RUNS_ROOT}/{job_id}/prepared"}, identifier)
+            source_uri = prepared["prepared_source_uri"]
         manifest_uri = source_uri.rsplit("/", 1)[0] + "/dataset_manifest.json"
         raw = await frozen_read(engine, {"account": record["account"]}, manifest_uri)
         dialogue_config = {"dataset_manifest_ref": manifest_uri,
                            "dataset_manifest_sha256": hashlib.sha256(raw.encode()).hexdigest(),
-                           "dialogue_options": options()}
-    source = await engine._ov_source_detail(record)
+                           "dialogue_options": options(),
+                           "execution_protocol": S2_PROTOCOL if s2 else PROTOCOL}
+        if s2:
+            from .dialogue_dimensions.v2.input_view import DEFAULTS
+            dialogue_config["s2_options"] = dict(engine.settings.get("s2_options", DEFAULTS))
+    source = await engine._ov_source_detail({**record, "uri": source_uri})
     if not source.get("ready"):
         raise ValueError("知识源目录中没有可挖掘文件或目录清单不完整")
     name = str(body.get("name") or f"{source.get('name')} 挖掘任务").strip()
@@ -78,6 +110,8 @@ async def create(engine, body, identifier):
     version = compiler_contract_version(compiler)
     if dialogue_config:
         output_root = f"{RUNS_ROOT}/{job_id}/output/analysis/dialogue_dimensions"
+        if s2:
+            output_root += "_s2"
         dialogue_config["dialogue_output_root"] = validate_resource_uri(output_root)
     # The very first metadata INSERT includes the frozen accepted configuration.
     # A crash before the file checkpoint can reconstruct the compiler and queue

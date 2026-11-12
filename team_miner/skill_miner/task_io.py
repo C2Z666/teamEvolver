@@ -47,7 +47,18 @@ async def accept(request, services, operation, raw, settings, *, job_id=""):
         raise HTTPException(400, "Worker revision fields cannot be supplied by the client")
     identifier = "skill-op:" + (digest([tenant, operation, key]) if key else uuid.uuid4().hex)
     state = State(services, tenant)
-    payload = {"operation": operation, "body": raw, "settings": freeze(settings), "job_id": job_id,
+    frozen_settings = freeze(settings)
+    if operation == "job.create":
+        from .dialogue_dimensions.v2 import PROTOCOL
+        from .dialogue_dimensions.v2.compiler import sections
+        from .settings import compiler_prompt
+        compiler = compiler_prompt(settings.config)
+        if PROTOCOL in compiler:
+            sections(compiler)
+            from .dialogue_dimensions.v2.input_view import DEFAULTS
+            frozen_settings["s2_options"] = dict(DEFAULTS)
+        frozen_settings["compiler_body_snapshot"] = compiler
+    payload = {"operation": operation, "body": raw, "settings": frozen_settings, "job_id": job_id,
                "submitted_by": str((getattr(request.state, "console_user", None) or {}).get("id") or "admin")}
     async with services.tx.tenant_tx(tenant) as conn:
         await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", identifier)

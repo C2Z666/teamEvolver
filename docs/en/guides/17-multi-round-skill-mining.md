@@ -1,6 +1,6 @@
 # Multi-round Skill Mining and Human Supplements
 
-Skill mining compiles registered OpenViking documents into deliverable Skill packages and lives in `team_miner/skill_miner/`. The current default compiler constructs or locally revises instructor Skills by knowledge point from course source tables. It does not generate validation Cases or publish automatically. Knowledge base mining remains separate in `team_miner/knowledge_miner/` and compiles documents into Wiki pages.
+Skill mining compiles registered OpenViking documents into deliverable Skill packages and lives in `team_miner/skill_miner/`. The current default is S2 dialogue dimension extraction: raw whitelist dialogues are extracted, centrally registered, audited and converted to provisional rubrics without creating Skill Candidates. See the [S2 API contract](../api/17-skill-mining.md). The multi-round workflow below applies to explicitly retained historical custom compilers. Knowledge base mining remains separate in `team_miner/knowledge_miner/` and compiles documents into Wiki pages.
 
 The console retains Mining Overview, Sources and Skill Mining entries. Each accepted round uses frozen inputs and a compiler Skill; later edits to original directories or default instructions do not rewrite accepted rounds.
 
@@ -28,9 +28,9 @@ Register a directory under Sources, tag it for Skill use, then create a task fro
 
 Compile uses OpenViking's models and runtime. One external Compile may contain multiple model calls and internal tasks; external request counts alone do not establish workload.
 
-## Default delivery and revisions
+## Historical compiler delivery and revisions
 
-The default compiler is `team_miner/skill_miner/knowledge_compiler_v8.py`, using execution protocol `te-native-mining.v1` and completion policy `te-compile-finished.v1`. After remote completion, TE preserves returned files and records successful mining without adding content acceptance gates or requiring `EVALUATION.md`, `METHOD.json`, `benchmark.json` or validation Cases.
+The historical knowledge-point compiler is `team_miner/skill_miner/knowledge_compiler_v8.py`, using execution protocol `te-native-mining.v1` and completion policy `te-compile-finished.v1`. After remote completion, TE preserves returned files and records successful mining without adding content acceptance gates or requiring `EVALUATION.md`, `METHOD.json`, `benchmark.json` or validation Cases.
 
 The job reports `content_validated=false` and its candidate inventory reports `can_submit=false`. Mining delivery is complete; this does not establish business correctness, successful True Replay or permission to publish.
 

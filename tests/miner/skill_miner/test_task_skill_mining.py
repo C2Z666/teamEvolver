@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from team_miner.skill_miner.default_compiler import SKILL_BODY as DEFAULT_SKILL
 from team_miner.skill_miner.knowledge_compiler import AUXILIARY_FILES, SKILL_BODY
 from team_miner.skill_miner.knowledge_compiler_v1 import AUXILIARY_FILES as POINT_V1_FILES
 from team_miner.skill_miner.knowledge_compiler_v1 import SKILL_BODY as POINT_V1_SKILL
@@ -50,7 +51,7 @@ def test_new_default_retains_historical_skill_and_both_freeze_independently(tmp_
         folder.mkdir()
         freeze_assets(folder, body)
         assert frozen_assets(folder, body) == files
-    assert compiler_prompt({}) == SKILL_BODY
+    assert compiler_prompt({}) == DEFAULT_SKILL
     assert compiler_prompt({"mining": {"prompts": {"ov_compile": OLD_SKILL}}}) == OLD_SKILL
     assert settings_payload({})["prompts"][0]["previous_default_prompt"] == OLD_SKILL
     assert settings_payload({})["prompts"][0]["previous_knowledge_default_prompt"] == POINT_V1_SKILL

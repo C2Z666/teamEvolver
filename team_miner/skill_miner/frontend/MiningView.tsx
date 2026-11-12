@@ -47,6 +47,7 @@ export default function MiningView(props: Parameters<typeof useMiningController>
     stateLabel, stateTone, filteredJobs, selectInputDir,
     verifySelectedInputSource, startRun, deleteMiningJob, saveArtifactRevision,
   } = controller;
+  const s2 = config?.execution_protocol === "te-dialogue-dimensions.v2";
 
   function handleArtifactLink(href: string): boolean {
     if (!artifactPreview || !selectedJob || href.startsWith("#") || /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(href)) return false;
@@ -81,7 +82,7 @@ export default function MiningView(props: Parameters<typeof useMiningController>
     <div>
       <PageHeader
         title={meta.title}
-        description={meta.description}
+        description={s2 && page === "jobs" ? "从原始白名单对话创建任务，自动提取行为、登记共享维度、检查原文并生成候选评分标准。" : meta.description}
         badge="SkillMiner"
         actions={running && <Pill tone="blue">{jobCounts.running ? `${jobCounts.running} 个运行中` : `${jobCounts.queued} 个排队中`}</Pill>}
       />
@@ -314,7 +315,7 @@ export default function MiningView(props: Parameters<typeof useMiningController>
       <Dialog open={createJobOpen} onOpenChange={(open) => !starting && setCreateJobOpen(open)}>
         <DialogContent className="max-h-[90vh] w-[calc(100vw-32px)] overflow-y-auto !max-w-[1120px]">
           <DialogHeader>
-            <DialogTitle>新建 Skill 挖掘任务</DialogTitle>
+            <DialogTitle>{s2 ? "新建优秀对话维度任务" : "新建 Skill 挖掘任务"}</DialogTitle>
           </DialogHeader>
 
           <div className="grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
@@ -326,12 +327,13 @@ export default function MiningView(props: Parameters<typeof useMiningController>
                   <Input
                     value={taskName}
                     onChange={(event) => setTaskName(event.target.value)}
-                    placeholder="例如：智能客服技能挖掘"
+                    placeholder={s2 ? "例如：优秀对话评分维度" : "例如：智能客服技能挖掘"}
                     maxLength={120}
                     autoFocus
                   />
                 </label>
 
+                {!s2 && <>
                 <label className="block">
                   <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">挖掘模式</span>
                   <select aria-label="挖掘模式" value={miningMode} disabled={starting}
@@ -372,6 +374,8 @@ export default function MiningView(props: Parameters<typeof useMiningController>
                   {miningMode === "single" ? "目标为 1 个完整 Skill。" : "可设置 1–100 个。"}
                   来源不足时明确提示实际数量及缺口，等待复核；不会硬凑数量或强行拼接无关方法。
                 </p>}
+                </>}
+                {s2 && <p className="text-xs text-muted-foreground">选择原始白名单对话知识源。一次任务自动完成全部阶段，产出待复核、待校准的评分标准，不创建 Skill Candidate。</p>}
 
                 <label className="block">
                   <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">选择知识源</span>
@@ -424,7 +428,7 @@ export default function MiningView(props: Parameters<typeof useMiningController>
                   </div>
                 </label>
 
-                <label className="block">
+                {config?.execution_protocol !== "te-dialogue-dimensions.v2" && <label className="block">
                   <span className="mb-1.5 flex items-center justify-between text-xs font-semibold text-muted-foreground">
                     挖掘轮数上限
                     <span className="text-accent">{rounds}</span>
@@ -438,7 +442,7 @@ export default function MiningView(props: Parameters<typeof useMiningController>
                     onChange={(event) => setRounds(Number(event.target.value))}
                     className="w-full accent-[var(--accent)]"
                   />
-                </label>
+                </label>}
 
                 <label className="block text-xs text-muted-foreground">
                   单轮运行期限（秒，最高 24 小时）
@@ -449,7 +453,7 @@ export default function MiningView(props: Parameters<typeof useMiningController>
                   <span className="mt-1 block text-[11px]">每轮从远端受理后独立计时，包含远端排队；人工补证等待不计时。运行期限用于保护预算，不代表预计完成时间。到期请求取消并等待远端确认。</span>
                 </label>
 
-                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-background p-3.5 transition-colors hover:border-accent/50">
+                {!s2 && <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-background p-3.5 transition-colors hover:border-accent/50">
                   <input
                     type="checkbox"
                     checked={humanCheckpoints}
@@ -463,7 +467,7 @@ export default function MiningView(props: Parameters<typeof useMiningController>
                       默认整轮编译：有问题时可补充回答、引用和文档；问题数为 0 时直接结束。关闭后保留未解决问题，不发起没有新 Evidence 的轮次。
                     </span>
                   </span>
-                </label>
+                </label>}
 
                 <div className="rounded-lg border border-border bg-background/70 p-3 text-[11px] leading-relaxed text-muted-foreground">
                   每轮编译使用 OpenViking 服务端的模型配置，并固化本轮输入。最多同时运行 {mining.jobSummary.max_parallel} 个任务；等待人工补证的任务不占运行并发，继续时需有可用名额。
@@ -473,8 +477,8 @@ export default function MiningView(props: Parameters<typeof useMiningController>
                 <div className="flex justify-end gap-2 pt-1">
                   <Button variant="outline" disabled={starting} onClick={() => setCreateJobOpen(false)}>取消</Button>
                   <Button onClick={startRun} disabled={starting || !selectedSource?.ready
-                    || (miningMode === "single" && !miningDirection.trim())
-                    || (miningMode === "target" && (!Number.isInteger(targetSkillCount)
+                    || (!s2 && miningMode === "single" && !miningDirection.trim())
+                    || (!s2 && miningMode === "target" && (!Number.isInteger(targetSkillCount)
                       || targetSkillCount < 1 || targetSkillCount > 100))}>
                     <Play className="size-4" /> {starting ? "创建中…" : "创建任务"}
                   </Button>

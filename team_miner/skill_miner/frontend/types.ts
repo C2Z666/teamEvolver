@@ -119,6 +119,17 @@ export interface MiningJob {
   staged_progress?: { phase: string; label: string; completed: number; total: number; subtask_index?: number };
   execution_protocol?: string;
   dialogue_recovery_epoch?: number;
+  dialogue_stage?: string;
+  processed_case_count?: number;
+  total_case_count?: number;
+  evidence_count?: number;
+  assigned_evidence_count?: number;
+  pending_evidence_count?: number;
+  audit_completed_count?: number;
+  audit_planned_count?: number;
+  rubric_count?: number;
+  issue_count?: number;
+  registry_revision?: number;
   native_compile_history?: { round: number; task_id: string }[];
   native_repairs?: { round: number; attempt: number; error: string }[];
   ov_cancel_error?: string;
@@ -228,6 +239,7 @@ export interface ArtifactContent {
 }
 
 export interface MiningDefaults {
+  execution_protocol?: string;
   max_rounds_default: number;
   max_rounds_range: [number, number];
   runtime_timeout_seconds_default: number;

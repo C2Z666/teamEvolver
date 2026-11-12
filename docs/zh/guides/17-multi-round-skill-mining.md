@@ -1,6 +1,6 @@
 # 多轮 Skill 挖掘与人工补证
 
-Skill 挖掘把登记在 OpenViking 中的资料编译为可交付的 Skill 包，代码位于 `team_miner/skill_miner/`。当前默认编译器按课程原表中的知识点构建或局部修订教官 Skill；它不生成验证案例，也不自动发布。知识库挖掘独立位于 `team_miner/knowledge_miner/`，继续执行资料到 Wiki 的流程。
+Skill 挖掘把登记在 OpenViking 中的资料编译为可交付的 Skill 包，代码位于 `team_miner/skill_miner/`。当前默认编译器为 S2 优秀对话维度提取：从原始白名单对话自动完成提取、共享维度登记、全量检查与候选评分标准生成，不产生 Skill Candidate。详见 [S2 输入与执行契约](../api/17-skill-mining.md#优秀对话维度提取)。以下多轮操作适用于显式保留的历史自定义编译器。知识库挖掘独立位于 `team_miner/knowledge_miner/`，继续执行资料到 Wiki 的流程。
 
 控制台保留「挖掘总览」「知识源」「Skill 挖掘」三个入口。任务采用冻结的编译 Skill 和输入，后续修改原始目录或默认指令不会追溯改变已受理轮次。
 
@@ -28,9 +28,9 @@ Skill 挖掘把登记在 OpenViking 中的资料编译为可交付的 Skill 包�
 
 Compile 使用 OpenViking 的模型和运行环境。一次外部 Compile 可以包含多个模型调用和内部子任务，外部请求数量不能直接代表实际工作量。
 
-## 默认交付与修订
+## 历史编译器交付与修订
 
-默认编译器为 `team_miner/skill_miner/knowledge_compiler_v8.py`，执行协议使用 `te-native-mining.v1`，完成策略为 `te-compile-finished.v1`。远端完成后保留返回文件并记录挖掘成功，不增加 TE 内容验收，不要求 `EVALUATION.md`、`METHOD.json`、`benchmark.json` 或验证案例。
+历史知识点编译器为 `team_miner/skill_miner/knowledge_compiler_v8.py`，执行协议使用 `te-native-mining.v1`，完成策略为 `te-compile-finished.v1`。远端完成后保留返回文件并记录挖掘成功，不增加 TE 内容验收，不要求 `EVALUATION.md`、`METHOD.json`、`benchmark.json` 或验证案例。
 
 任务清单显示 `content_validated=false`，对应候选显示 `can_submit=false`。这表示完成了挖掘交付，不能据此认为业务内容正确、True Replay 通过或可以发布。
 

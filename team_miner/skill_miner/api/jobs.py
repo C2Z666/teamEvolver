@@ -35,11 +35,15 @@ def router(services):
     async def mining_config(request: Request):
         settings = await ctx.settings(request)
         defaults = pipeline_settings(settings.config)
-        return {"engine": "ov_compile", "max_rounds_default": defaults["max_rounds"], "max_rounds_range": [1, 5],
+        protocol = settings_payload(settings.config)["execution_protocol"]
+        s2 = protocol == "te-dialogue-dimensions.v2"
+        return {"engine": "ov_compile", "execution_protocol": protocol,
+                "max_rounds_default": 1 if s2 else defaults["max_rounds"],
+                "max_rounds_range": [1, 1] if s2 else [1, 5],
                 "runtime_timeout_seconds_default": defaults["runtime_timeout_seconds"],
                 "runtime_timeout_seconds_range": list(PIPELINE_RANGES["runtime_timeout_seconds"]),
                 "rounds_mode": "orchestrated",
-                "human_checkpoints_supported": True,
+                "human_checkpoints_supported": not s2,
                 "compile_model": {"configuration_source": "openviking_server", "editable_here": False}}
 
     @routes.get("/api/mining/settings")
@@ -84,8 +88,11 @@ def router(services):
     @routes.post("/api/mining/jobs", status_code=202)
     async def create(request: Request):
         settings = await ctx.settings(request)
-        body = await read_body(request, 128 * 1024)
-        return await accept(request, services, "job.create", body, settings)
+        body = await read_body(request, 30 * 1024 * 1024)
+        try:
+            return await accept(request, services, "job.create", body, settings)
+        except ValueError as exc:
+            raise translate(exc) from exc
 
     @routes.post("/api/mining/dialogue-datasets", status_code=202)
     async def dialogue_dataset(request: Request):

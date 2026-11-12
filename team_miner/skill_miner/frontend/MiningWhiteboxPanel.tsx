@@ -19,6 +19,11 @@ interface MiningPromptSetting {
 interface MiningWhiteboxSettings {
   revision: number;
   engine: "ov_compile";
+  execution_protocol?: string;
+  default_version?: string;
+  default_sha256?: string;
+  effective_sha256?: string;
+  migration_status?: string;
   model: { configuration_source: "openviking_server"; editable_here: false };
   pipeline: { max_rounds: number; runtime_timeout_seconds: number };
   prompts: MiningPromptSetting[];
@@ -90,6 +95,7 @@ export default function MiningWhiteboxPanel({ active, user }: { active: boolean;
     }
   }
 
+  const s2 = settings?.execution_protocol === "te-dialogue-dimensions.v2";
   const disabled = !isAdmin || !settings || saving;
   return (
     <div className="mt-5 space-y-5">
@@ -108,9 +114,10 @@ export default function MiningWhiteboxPanel({ active, user }: { active: boolean;
           <p className="text-xs leading-relaxed text-muted-foreground">
             编译使用 OpenViking 服务端的模型配置。以下默认参数用于新任务，可在创建任务时调整；人工补证等待不计入单轮期限。
           </p>
+          {s2 && <p className="text-xs text-muted-foreground">一次任务自动完成行为提取、共享维度匹配、全量检查和候选评分标准生成。内部最多新增 2 轮、修订 1 轮，不产生 Skill Candidate。</p>}
           <div className="grid gap-3.5 md:grid-cols-2">
-            <NumberField label="默认挖掘轮数上限" value={settings?.pipeline.max_rounds ?? 3} min={1} max={5}
-              disabled={disabled} onChange={(value) => updatePipeline("max_rounds", value)} />
+            {!s2 && <NumberField label="默认挖掘轮数上限" value={settings?.pipeline.max_rounds ?? 3} min={1} max={5}
+              disabled={disabled} onChange={(value) => updatePipeline("max_rounds", value)} />}
             <NumberField label="默认单轮运行期限（秒）" value={settings?.pipeline.runtime_timeout_seconds ?? 3600} min={60} max={86400}
               disabled={disabled} onChange={(value) => updatePipeline("runtime_timeout_seconds", value)} />
           </div>
@@ -122,6 +129,7 @@ export default function MiningWhiteboxPanel({ active, user }: { active: boolean;
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="font-bold">{prompt.label}</div>
+                {settings?.execution_protocol && <p className="mono text-xs break-all">{settings.execution_protocol} · {settings.default_version}<br />默认摘要：{settings.default_sha256}<br />有效摘要：{settings.effective_sha256}</p>}
                 <p className="mt-1 text-xs text-muted-foreground">{prompt.description}</p>
                 <p className="mt-1 text-xs text-muted-foreground">在这里编辑并保存编译 Skill，然后按原有方式创建任务；新任务使用保存的内容。</p>
                 <p className="mt-1 text-xs text-muted-foreground">产物语言按首轮原始来源冻结，中文主导用简体中文，后续轮不随旧产物或补证语言改变。自定义业务指令原样保存；语言规则加入新的 Compile 请求，不改写已受理请求或已完成产物。</p>

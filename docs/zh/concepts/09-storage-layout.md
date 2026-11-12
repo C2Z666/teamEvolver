@@ -147,3 +147,5 @@ viking://user/<user>/{memories,resources,skills}
 - [架构总览](./01-architecture.md)
 - [Memory 体系](./04-memory.md)
 - [配置参考](../guides/01-configuration.md)
+
+S2 对话维度状态存储在 `dialogue_dimension_state`，按 tenant/job/state_key 隔离，revision CAS 与 Worker fence 共同保护回执消费及登记。配置迁移备份也在该领域表中，应用启动不执行迁移。

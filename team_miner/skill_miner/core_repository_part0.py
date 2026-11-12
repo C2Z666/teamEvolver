@@ -382,7 +382,8 @@ class RepositoryCoreMixin:
                         job.pop(key)
             if dialogue_config is not None:
                 from .dialogue_dimensions import PROTOCOL as DIALOGUE_PROTOCOL
-                job.update(dialogue_config, task_mode="dialogue_dimensions", execution_protocol=DIALOGUE_PROTOCOL,
+                job.update(dialogue_config, task_mode="dialogue_dimensions",
+                           execution_protocol=dialogue_config.get("execution_protocol", DIALOGUE_PROTOCOL),
                            benchmark_required=False, candidate_count=0, orchestration_version=1,
                            human_checkpoints_effective=False, delivery_status="partial")
                 for key in list(job):
@@ -392,8 +393,9 @@ class RepositoryCoreMixin:
             (job_dir / "workspace" / "compiled_skill").mkdir(parents=True, exist_ok=False)
             (job_dir / "workspace" / "semantic_reports").mkdir(parents=True, exist_ok=True)
             job["workspace"] = (job_dir / "workspace").relative_to(self.project_root).as_posix()
-            if compiler_body is not None and dialogue_config is None:
+            if compiler_body is not None:
                 job["compiler_body_snapshot"] = compiler_body
+                job["skill_hash"] = hashlib.sha256(compiler_body.encode()).hexdigest()
                 (job_dir / "compiler-skill.md").write_text(compiler_body, encoding="utf-8")
                 from .native_compiler import freeze_assets
                 freeze_assets(job_dir, compiler_body)

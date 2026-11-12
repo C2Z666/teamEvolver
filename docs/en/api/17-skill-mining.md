@@ -2,59 +2,43 @@
 
 ## Excellent dialogue dimensions
 
-Edit and save the complete Skill in the existing compiler editor, then create a task through
-the existing `POST /api/mining/jobs` flow. Execution uses the saved Skill. A Skill declaring
-`te-dialogue-dimensions.v1` selects dialogue dimension extraction without a backend compiler
-override, hidden frozen attachments, or a new task type button.
-All cases are selected excellent dialogues; historical scores and evaluations are excluded.
-Provide the registered `input_dir` (the prepared `model_cases` directory), `source_id`, and
-existing task parameters. The Worker reads the parent dataset manifest and verifies each file;
-users do not supply manifest URIs or digests. Extraction uses one business round, independent
-of batches and merge windows, and creates no Skill Candidates or Test Datasets.
-Protocol v1 denotes the initial implementation, not a compatibility upgrade.
+The default compiler is `taikang-dialogue-dimensions-s2`, using `te-dialogue-dimensions.v2`.
+One `POST /api/mining/jobs` drives extraction, shared-dimension matching, centralized registration, exhaustive source audit, bounded revision and candidate rubrics. It creates no Skill Candidate or Test Dataset.
+Valid custom compiler text is frozen unchanged; existing v1 jobs retain their protocol routing.
 
-Initial execution budgets cap extraction at 8 cases, 24,000 characters and 96,000 bytes;
-one dialogue is limited to 20,000 characters. Merge windows contain at most 12 members,
-16,000 characters and 64,000 bytes. The executor submits serially through the tenant's shared
-Compile admission slots, with at most two repairs per unit. Sentence IDs are used by default;
-quoted text is checked against the original input.
-Whole cases are never truncated. Oversized cases remain pending.
+Input is a registered whitelist `model_cases` source. The Worker verifies the parent manifest and every source digest.
+For raw JSONL, provide `raw_dialogue_uri` beneath the same registered source; preparation runs within the same accepted operation.
+Inline raw input is also supported through `dialogue_input: {"format":"jsonl", "filename":"cases.jsonl", "content_base64":"…"}` (xlsx is supported). The same Worker task prepares and processes it.
+Historical findings, dimensions, scores and evaluations never enter model input. Original cases use `taikang.dialogue-case.v1`; compact model views preserve every source character and sentence identity.
 
-The Worker creates a separate input directory for each Compile, copies complete unaccepted
-case files or the current merge window, and verifies hashes and directory membership.
-`from` contains that directory URI; OV rejects individual file URIs.
-Inputs live at the job's `dialogue/recovery-<epoch>/units/<stage>-<number>/attempt-<attempt>-input`,
-with output in the sibling `attempt-<attempt>` directory. Definitive request rejection preserves
-the redacted HTTP status and reason and stops further automatic submissions for this job.
-Timeouts or uncertain acceptance retain the original idempotency key for reconciliation.
+New jobs freeze the complete Skill, configuration revision and budgets. Each model packet performs only extract, propose, match, register, audit, revise or rubric.
+Packets are capped at 12,000 characters and 48,000 bytes. Each Compile contains at most four packets and 32,000 characters, with one file Map and Finalize.
+Discovery is limited to two rounds and revision to one. Successful extraction is never repeated. Oversized complete cases remain capacity_pending without truncation.
+Unknown submissions reconcile with their original idempotency key; only failed units receive up to two repairs.
 
-`POST /api/mining/dialogue-datasets` queues preparation and returns 202. Supply `output_uri`,
-`format` (`xlsx` or `jsonl`) and the original file's `content_base64`; JSONL also supports `source_uri`.
-The original file limit is 20 MiB and request limit 30 MiB. Optional fields are `filename`,
-`dataset_namespace`, and `dialogue_options`. The Worker returns `prepared_source_uri`,
-`dataset_manifest_ref`, `dataset_manifest_sha256`, and counts. Register the model directory through
-the existing source API with a Skill tag. Original workbooks, scores, and evaluations are not attached to Compile.
+Registration compares the current directory page by page; incomplete comparison cannot authorize a new dimension.
+Semantic revisions create versions and recheck every case. N/A means not applicable and NE means insufficient evidence; neither is zero.
+Rubrics are candidate standards pending independent calibration. No case scores, weights or totals are computed.
+Output lives under `analysis/dialogue_dimensions_s2`, with dimensions, rubrics, methods, findings, memberships, audit, coverage, issues, lineage, sources, manifest, validation and run_metrics.
+PG is authoritative for jobs, receipts, versions and statistics. OV stores input and delivery artifacts.
+Local failures produce partial delivery and never count unprocessed cases as complete.
 
-OV results live under the job output's `analysis/dialogue_dimensions`, projected to
-`semantic_reports/dialogue_dimensions` for individual artifact preview.
-`delivery_status` is `complete` or `partial`; `validation_status` is `passed`,
-`passed_with_warnings`, or `blocked`. Only real accepted receipts count toward `processed_case_count`.
-Citation problems are isolated locally. Single-case support, missing optional fields, and cross-window
-near synonyms do not block delivery. Exhausted pending units yield `interrupted`; structural or source
-safety failures yield `failed`. Accepted results are preserved. Structural and citation checks do not
-independently verify all business judgments, so `content_validated=false`.
-Resume partial delivery through `POST /api/mining/jobs/{job_id}/resume` with a stable `request_id`;
-the existing resume button supplies and reuses that ID when retrying a lost response.
-Accepted findings are reused, each new delivery is archived independently, and old rejection flags
-are cleared. Recovery uses the accepted Skill configuration. Changed Skills, data or budgets require a new job.
+`GET /api/mining/settings` exposes execution_protocol, default_version, default_sha256, effective_sha256 and migration_status. S2 has candidate_mode=none.
+Default viewing, reset and new-job snapshots use one production resource.
+Migrate the deployment target explicitly with `scripts/migrate_dialogue_dimensions_default.py --tenant <tenant> --expected-revision <revision>`.
+The transactional CAS migration backs up the previous body and revision in PG, preserves unrelated settings, and never overwrites later edits when rerun.
+Apply schema 018 first; application startup neither creates tables nor resets configuration.
+
+The separate `POST /api/mining/dialogue-datasets` preparation API remains available for XLSX and JSONL and returns 202.
+Supply output_uri, format and content_base64; JSONL also supports source_uri. Raw files are limited to 20 MiB.
 
 These console-internal interfaces manage OpenViking Compile rounds and human Evidence supplements. They require a valid console Session Cookie and either `tenant_admin` in the selected tenant or `platform_admin`. Ordinary members and tenant machine credentials cannot call these management interfaces. The Agent data-plane protocol is unchanged.
 
 `team_miner/api/` composes the interfaces. Skill mining lives in `team_miner/skill_miner/`, separately from knowledge base mining in `team_miner/knowledge_miner/`. Jobs, rounds, supplements and artifact content persist through the [PostgreSQL Repository](../../../team_miner/skill_miner/repository.py); temporary working directories are rebuildable caches. See [Multi-round Skill Mining](../guides/17-multi-round-skill-mining.md) for the workflow.
 
-## Default delivery and candidate eligibility
+## Historical Skill compiler delivery and candidate eligibility
 
-The current default compiler is the knowledge-point Skill compiler in `knowledge_compiler_v8.py`, exposed through `team_miner/skill_miner/knowledge_compiler.py`. Its `completion_policy: te-compile-finished.v1` records mining completion after remote Compile completion and persistence of returned artifacts. Content acceptance, Test Datasets and human approval are not completion gates. This mode does not require `benchmark.json`; its inventory explicitly reports `content_validated=false` and `can_submit=false`.
+The historical knowledge-point Skill compiler remains in `knowledge_compiler_v8.py`, exposed through `team_miner/skill_miner/knowledge_compiler.py`. Its `completion_policy: te-compile-finished.v1` records mining completion after remote Compile completion and persistence of returned artifacts. Content acceptance, Test Datasets and human approval are not completion gates. This mode does not require `benchmark.json`; its inventory explicitly reports `content_validated=false` and `can_submit=false`.
 
 Mining completion therefore does not establish Candidate Review eligibility. The capability plan,12–24 Cases and human Evidence question contracts below apply to jobs explicitly using that review contract. Delivery-only packages cannot be submitted directly, and TE does not invent evaluations or Cases to make them eligible. Within the round limit, explicit revision requirements can start another round without empty automatic continuation. Review-capable packages must pass revalidation of the selected independent candidate before submission.
 
@@ -92,7 +76,7 @@ The tenant's `miner` module configuration is required. Missing configuration ret
 
 ## Create a job
 
-The main fields of `POST /api/mining/jobs` are:
+The main fields of `POST /api/mining/jobs` follow. Round and Skill count controls apply to historical custom compilers; S2 uses one job without human checkpoints or Skill count targets:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -114,7 +98,7 @@ Saved custom business instructions remain unchanged and do not require a reset f
 
 Jobs using the multi-candidate review contract use `candidate_contract_version: 2`. One native Compile plans complete independent methods and generates their artifacts. Counts follow goals and sources rather than files, customer profiles or substeps, without the old host eight-candidate batch limit. Insufficient support remains explicit rather than forcing a count.
 
-When a previously saved custom compiler Skill still uses the single-candidate contract, new jobs retain `candidate_contract_version: 1` with a compatibility warning. Reset to the current default compiler Skill to enable multiple candidates in subsequently created jobs. Existing jobs retain their frozen contracts.
+When a previously saved custom compiler Skill still uses the single-candidate contract, new jobs retain `candidate_contract_version: 1` with a compatibility warning. Resetting to the current default selects S2 dimension extraction, without candidates. Existing jobs retain their frozen contracts.
 
 Whole-round execution lives in [native rounds](../../../team_miner/skill_miner/native_round.py) and the [compiler Skill](../../../team_miner/skill_miner/native_compiler.py). Per-method METHOD.json receipts aggregate into the existing capability plan. Test Dataset Markdown is deterministically rendered from validated JSON. Lost acceptance is reconciled by the original key; only explicit artifact-validation failures or truncated output permit at most two whole-task repairs per round. Dependency, source, authentication, transport and unknown failures retain structured diagnostics without becoming new business instructions, preserving original requests, errors and results.
 

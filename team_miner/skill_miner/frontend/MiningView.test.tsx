@@ -45,10 +45,11 @@ type FixtureJob = Omit<ReturnType<typeof waitingJob>, "pending_checkpoint"> & {
   pending_checkpoint: ReturnType<typeof waitingJob>["pending_checkpoint"] | null;
 };
 
-function installApi(job: FixtureJob | null, onAction?: (path: string, body: Record<string, any>) => unknown) {
+function installApi(job: FixtureJob | null, onAction?: (path: string, body: Record<string, any>) => unknown, protocol = "") {
   let current = job;
   mockedApi.mockImplementation(async (path: string, init?: RequestInit) => {
     if (path === "/api/mining/config") return {
+      execution_protocol: protocol,
       max_rounds_default: 3, max_rounds_range: [1, 5],
       runtime_timeout_seconds_default: 3600, runtime_timeout_seconds_range: [60, 86400],
     };
@@ -89,6 +90,23 @@ describe("MiningView real mining rounds", () => {
     vi.mocked(toastErr).mockClear();
   });
   afterEach(cleanup);
+
+  it("creates S2 jobs without legacy Skill count or human checkpoint controls", async () => {
+    const action = vi.fn(() => ({ jobs: [] }));
+    installApi(null, action, "te-dialogue-dimensions.v2");
+    render(<MiningView active page="jobs" />);
+    await screen.findByText(/从原始白名单对话创建任务/);
+    fireEvent.click(screen.getByRole("button", { name: "新建 Skill 挖掘" }));
+    const dialog = await screen.findByRole("dialog", { name: "新建优秀对话维度任务" });
+    expect(within(dialog).queryByRole("combobox", { name: "挖掘模式" })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("checkbox")).not.toBeInTheDocument();
+    const create = within(dialog).getByRole("button", { name: "创建任务" });
+    await waitFor(() => expect(create).toBeEnabled());
+    fireEvent.click(create);
+    await waitFor(() => expect(action).toHaveBeenCalledWith("/api/mining/jobs", expect.objectContaining({
+      mining_mode: "auto", mining_direction: "", target_skill_count: null, human_checkpoints: false,
+    })));
+  });
 
   it("shows actual whole-round Compile admissions separately from validated host subtasks", async () => {
     installApi({ ...waitingJob(1, 2, false), status: "running", pending_checkpoint: null, rounds: [],

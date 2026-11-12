@@ -37,6 +37,7 @@ export default function MiningJobDetail({ job, controller }: { job: MiningJob; c
     resumeJob, retryNativeJob, stopJob, uploadCheckpointEvidence,
     submitCheckpointAnswers, previewArtifact, submitJobToEvolution,
   } = controller;
+    const s2 = job.execution_protocol === "te-dialogue-dimensions.v2";
     const durableGaps = job.knowledge_gaps?.questions || [];
     const supplementRounds = job.knowledge_supplements || [];
     const supplementQuestions = job.pending_checkpoint?.questions || durableGaps;
@@ -76,6 +77,12 @@ export default function MiningJobDetail({ job, controller }: { job: MiningJob; c
     const editableArtifacts = job.status === "succeeded" || isWaitingForEvidence(job);
     return (
       <div className="space-y-4 border-t border-accent/20 bg-accent-soft/35 px-5 py-5">
+        {s2 && <div className="rounded border p-3 text-sm space-y-2">
+          <strong>候选评分标准 · {job.dialogue_stage || "prepare"}</strong>
+          <p>案例提取 {job.processed_case_count || 0}/{job.total_case_count || 0} · Evidence 归属 {job.assigned_evidence_count || 0}/{job.evidence_count || 0} · 待发现 {job.pending_evidence_count || 0}</p>
+          <p>全量检查 {job.audit_completed_count || 0}/{job.audit_planned_count || 0} · 评分口径 {job.rubric_count || 0} · 问题 {job.issue_count || 0} · 目录版本 {job.registry_revision || 0}</p>
+          <p className="text-muted-foreground">评分标准与来源材料见下方产物。候选档位尚待独立校准；N/A、NE 不作零分，不产生 Skill Candidate。</p>
+        </div>}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="select-text truncate text-[15px] font-bold">{job.name}</div>
@@ -83,7 +90,7 @@ export default function MiningJobDetail({ job, controller }: { job: MiningJob; c
               <Pill tone={jobStatusMeta(job.status).tone as any}>{jobStatusMeta(job.status).label}</Pill>
               {job.input_dir && <span className="mono select-text">{job.input_dir}</span>}
               {job.document_count !== null && <span>{job.document_count} 个文档</span>}
-              <span>第 {job.current_round || 1} / {job.max_rounds} 轮</span>
+              {!s2 && <span>第 {job.current_round || 1} / {job.max_rounds} 轮</span>}
               {job.mining_intent && <span>
                 {job.mining_intent.mode === "auto" ? "自由挖掘"
                   : job.mining_intent.mode === "single" ? "单 Skill 整合"
@@ -633,7 +640,7 @@ export default function MiningJobDetail({ job, controller }: { job: MiningJob; c
               <span className="text-[13px] font-bold">本轮共享资料</span>
               <Pill tone="gray">{artifactGroups.shared.length} 个文件</Pill>
             </div>
-            <p className="mt-1 text-[11px] text-muted-foreground">这里汇总本轮的来源、Evidence 缺口和拆分说明，供所有候选共同参考。</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">{s2 ? "评分维度、方法实例、Evidence、全量覆盖与问题均保留来源和版本。" : "这里汇总本轮的来源、Evidence 缺口和拆分说明，供所有候选共同参考。"}</p>
             {job.capability_plan && (
               <section aria-label="能力拆分计划" className="mt-3 rounded-lg border border-border p-3">
                 <div className="flex flex-wrap items-center gap-2">

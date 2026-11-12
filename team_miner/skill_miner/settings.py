@@ -5,7 +5,10 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from .knowledge_compiler import SKILL_BODY
+from .default_compiler import PROTOCOL as S2_PROTOCOL
+from .default_compiler import SHA256, SKILL_BODY, VERSION
+from .dialogue_dimensions.input import sha
+from .dialogue_dimensions.v2.compiler import sections
 from .knowledge_compiler_v1 import SKILL_BODY as POINT_V1_SKILL_BODY
 from .knowledge_compiler_v2 import SKILL_BODY as POINT_V2_SKILL_BODY
 from .knowledge_compiler_v3 import SKILL_BODY as POINT_V3_SKILL_BODY
@@ -23,7 +26,7 @@ COMPILER_PROMPT_ID = "ov_compile"
 MAX_COMPILER_BYTES = 256 * 1024
 LEGACY_COMPILER_WARNING = (
     "当前编译 Skill 未声明能力拆分计划契约，新任务仍按单候选编译。"
-    "恢复默认编译 Skill 后，新任务可生成多个 Skill Candidate。"
+    "恢复默认编译 Skill 后，新任务执行优秀对话评分维度分析，不产生 Skill Candidate。"
 )
 
 
@@ -57,13 +60,17 @@ def compiler_contract_version(body: str) -> int:
 def settings_payload(store_data: dict[str, Any]) -> dict[str, Any]:
     body = compiler_prompt(store_data)
     from .dialogue_dimensions import PROTOCOL
-    dialogue = PROTOCOL in body
+    s2 = S2_PROTOCOL in body
+    dialogue = PROTOCOL in body or s2
     contract_version = compiler_contract_version(body)
     warning = LEGACY_COMPILER_WARNING if contract_version == 1 and not dialogue else ""
     return {
         "engine": "ov_compile",
         "candidate_contract_version": contract_version,
-        "candidate_mode": "collection" if contract_version == 2 else "single",
+        "candidate_mode": "none" if dialogue else "collection" if contract_version == 2 else "single",
+        "execution_protocol": S2_PROTOCOL if s2 else PROTOCOL if dialogue else "",
+        "default_version": VERSION, "default_sha256": SHA256, "effective_sha256": sha(body),
+        "migration_status": (store_data.get("mining") or {}).get("s2_migration", "not_migrated"),
         "candidate_mode_warning": warning,
         "options_warnings": [warning] if warning else [],
         "model": {"configuration_source": "openviking_server", "editable_here": False},
@@ -73,7 +80,8 @@ def settings_payload(store_data: dict[str, Any]) -> dict[str, Any]:
             "label": "Skill 挖掘编译",
             "description": (
                 "新任务使用此处保存的编译 Skill，保留自定义内容，不由后端替换。"
-                + (warning or "默认每轮一次整轮 Compile；按用户方向构建完整方法，后续补证增量更新同一产物目录。")
+                + ("一次任务自动完成行为提取、共享维度匹配、全量检查和候选评分标准生成。" if s2 else
+                   warning or "按用户方向构建完整方法。")
             ),
             "default_prompt": SKILL_BODY,
             "previous_default_prompt": PREVIOUS_SKILL_BODY,
@@ -95,10 +103,8 @@ def settings_payload(store_data: dict[str, Any]) -> dict[str, Any]:
 def update_settings(store_data: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(body, dict):
         raise ValueError("挖掘设置必须为对象")
-    mining = {
-        "pipeline": pipeline_settings(store_data),
-        "prompts": {},
-    }
+    mining = copy.deepcopy(store_data.get("mining") or {})
+    mining.update(pipeline=pipeline_settings(store_data), prompts={})
     current = compiler_prompt(store_data)
     if current != SKILL_BODY:
         mining["prompts"][COMPILER_PROMPT_ID] = current
@@ -129,6 +135,8 @@ def update_settings(store_data: dict[str, Any], body: dict[str, Any]) -> dict[st
         # Use exactly the validator used when provisioning the immutable OV package.
         from .ov_round_orchestration import _compiler_package
         _compiler_package(prompt)
+        if S2_PROTOCOL in prompt:
+            sections(prompt)
         if prompt == SKILL_BODY:
             mining["prompts"].pop(COMPILER_PROMPT_ID, None)
         else:
@@ -143,9 +151,7 @@ def update_settings(store_data: dict[str, Any], body: dict[str, Any]) -> dict[st
 def reset_prompt(store_data: dict[str, Any], stage_id: str) -> dict[str, Any]:
     if stage_id != COMPILER_PROMPT_ID:
         raise KeyError("仅支持当前 OpenViking 编译 Skill")
-    mining = {
-        "pipeline": pipeline_settings(store_data),
-        "prompts": {},
-    }
+    mining = copy.deepcopy(store_data.get("mining") or {})
+    mining.update(pipeline=pipeline_settings(store_data), prompts={})
     store_data["mining"] = mining
     return settings_payload(store_data)

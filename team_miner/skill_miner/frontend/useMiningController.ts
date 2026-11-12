@@ -209,11 +209,12 @@ export function useMiningController({
           source_id: selectedSource?.source_id || "",
           input_dir: inputDir,
           max_rounds: rounds,
-          human_checkpoints: humanCheckpoints,
+          human_checkpoints: config?.execution_protocol === "te-dialogue-dimensions.v2" ? false : humanCheckpoints,
           runtime_timeout_seconds: runtimeTimeout,
-          mining_mode: miningMode,
-          mining_direction: miningDirection.trim(),
-          target_skill_count: miningMode === "single" ? 1 : miningMode === "target" ? targetSkillCount : null,
+          mining_mode: config?.execution_protocol === "te-dialogue-dimensions.v2" ? "auto" : miningMode,
+          mining_direction: config?.execution_protocol === "te-dialogue-dimensions.v2" ? "" : miningDirection.trim(),
+          target_skill_count: config?.execution_protocol === "te-dialogue-dimensions.v2" ? null
+            : miningMode === "single" ? 1 : miningMode === "target" ? targetSkillCount : null,
         }),
       });
       const created = response.jobs?.[0];

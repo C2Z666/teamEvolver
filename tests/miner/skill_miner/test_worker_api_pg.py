@@ -49,6 +49,10 @@ def test_create_job_receipt_frozen_assets_and_restart_then_stop_before_compile(p
     source = register_source(pg_env)
     with _pod(pg_env, tmp_path, monkeypatch, pod="a") as client:
         _login(client, bootstrap=True)
+        from team_miner.skill_miner.knowledge_compiler import SKILL_BODY
+        saved = client.post("/api/mining/settings", headers=H, json={"expected_revision": 0,
+                            "prompts": [{"id": "ov_compile", "prompt": SKILL_BODY}]})
+        assert saved.status_code == 200
         body = {"source_id": source["source_id"], "input_dir": ROOT, "name": "课程练习", "max_rounds": 2}
         first = client.post("/api/mining/jobs", headers={**H, "Idempotency-Key": "create-once"}, json=body)
         assert first.status_code == 202, first.text
@@ -130,3 +134,25 @@ def test_operation_payload_tampering_is_rejected_before_external_io(pg_env, tmp_
     row = _run(pg_env, "default", lambda conn: services.tasks.get(conn, task_id=identifier))
     assert row["status"] == "retry_wait"
     assert "ValueError" in row["error_code"]
+
+
+@pytest.mark.postgres
+def test_s2_acceptance_freezes_body_and_budgets(pg_env, tmp_path, monkeypatch):
+    import json
+
+    from team_miner.skill_miner.default_compiler import SKILL_BODY
+    from team_miner.skill_miner.dialogue_dimensions.v2.input_view import DEFAULTS
+
+    source = register_source(pg_env)
+    with _pod(pg_env, tmp_path, monkeypatch, pod="s2") as client:
+        _login(client, bootstrap=True)
+        response = client.post("/api/mining/jobs", headers=H,
+                               json={"source_id": source["source_id"], "input_dir": ROOT, "name": "S2"})
+        assert response.status_code == 202, response.text
+        identifier = response.json()["job_id"]
+    monkeypatch.setitem(DEFAULTS, "packet_input_chars", 999)
+    raw = _run(pg_env, "default", lambda conn: conn.fetchval(
+        f"SELECT content FROM {pg_env.schema}.storage_objects WHERE key=$1", "skill_miner/payload/" + identifier))
+    payload = json.loads(bytes(raw))
+    assert payload["settings"]["compiler_body_snapshot"] == SKILL_BODY
+    assert payload["settings"]["s2_options"]["packet_input_chars"] == 12000

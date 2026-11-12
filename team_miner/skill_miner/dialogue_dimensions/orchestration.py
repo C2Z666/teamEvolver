@@ -121,7 +121,7 @@ async def prepare(engine, job, journal):
 
 
 async def provision(engine, job):
-    body = engine._ov_skill_compiler_body()
+    body = job.get("compiler_body_snapshot") or engine._ov_skill_compiler_body()
     if PROTOCOL not in body:
         raise ValueError("dialogue_compiler_protocol_changed")
     name, published, _ = _compiler_package(body)

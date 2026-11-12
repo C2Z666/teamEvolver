@@ -125,7 +125,8 @@ class RepositoryPart2Mixin:
         )
         from .dialogue_dimensions import is_dialogue
         if is_dialogue(job):
-            result["can_resume"] = job.get("status") in {"interrupted", "stopped", "failed"}
+            result["can_resume"] = (job.get("status") in {"interrupted", "stopped", "failed"}
+                                    and job.get("dialogue_stage") != "finished")
         result["can_retry_native"] = False
         result["native_retry_context"] = None
         from .native_compiler import is_native

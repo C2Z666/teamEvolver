@@ -4,7 +4,7 @@ from copy import deepcopy
 
 import pytest
 
-from team_miner.skill_miner.knowledge_compiler import SKILL_BODY
+from team_miner.skill_miner.default_compiler import SKILL_BODY
 from team_miner.skill_miner.ov_compile_mining import LEGACY_SKILL_BODY
 from team_miner.skill_miner.settings import (
     LEGACY_COMPILER_WARNING,
@@ -23,14 +23,15 @@ def test_settings_expose_only_effective_compile_controls():
     assert result["model"] == {"configuration_source": "openviking_server", "editable_here": False}
     assert result["pipeline"] == {"max_rounds": 3, "runtime_timeout_seconds": 3600}
     assert [entry["id"] for entry in result["prompts"]] == ["ov_compile"]
-    assert result["candidate_contract_version"] == 2 and result["candidate_mode"] == "collection"
+    assert result["candidate_contract_version"] == 1 and result["candidate_mode"] == "none"
     assert not result["options_warnings"] and not result["candidate_mode_warning"]
     assert "secret" not in str(result)
 
 
 def test_saved_compiler_is_the_body_used_by_future_rounds():
     data = {"mining": {"pipeline": {"max_retries": 9}, "prompts": {"sample_package": "obsolete"}}}
-    custom = SKILL_BODY + "\nAlways explain conflicting Evidence.\n"
+    custom = SKILL_BODY.replace("<!-- s2:common:end -->",
+                                "Always explain conflicting Evidence.\n<!-- s2:common:end -->")
     result = update_settings(data, {
         "pipeline": {"max_rounds": 2, "runtime_timeout_seconds": 600},
         "prompts": [{"id": "ov_compile", "prompt": custom}],
@@ -72,7 +73,7 @@ def test_saved_legacy_compiler_keeps_exact_content_and_reports_single_candidate_
     updated = update_settings(data, {"pipeline": {"max_rounds": 2}})
     assert compiler_prompt(data) == custom and updated["candidate_contract_version"] == 1
     reset = reset_prompt(data, "ov_compile")
-    assert reset["candidate_contract_version"] == 2 and not reset["options_warnings"]
+    assert reset["candidate_mode"] == "none" and not reset["options_warnings"]
     assert compiler_prompt(data) == SKILL_BODY
 
 

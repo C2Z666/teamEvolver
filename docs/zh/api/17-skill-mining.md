@@ -2,52 +2,42 @@
 
 ## 优秀对话维度提取
 
-先在原有编译指令界面编辑并保存完整 Skill，再通过原有 `POST /api/mining/jobs` 创建任务。
-执行使用保存的 Skill；当正文声明 `te-dialogue-dimensions.v1` 时执行对话维度提取，
-不由后端替换为内置 Skill，不加载隐藏的冻结附件，也不新增任务类型按钮。
-全部案例视为已选定的优秀对话，历史评分与评价不进入模型。
-请求只需已登记的 `input_dir`（准备后的 `model_cases` 目录）、`source_id` 和原有任务参数。
-Worker 从父目录读取数据集清单并校验逐文件摘要，无需用户填写清单 URI 或摘要。
-对话维度提取固定一轮业务分析，提取批次和归并窗口数量独立于轮数，
-不生成 Skill Candidate 或 Test Dataset。协议 v1 是初版编号，不是兼容升级。
+网页默认编译 Skill 为 `taikang-dialogue-dimensions-s2`，协议为 `te-dialogue-dimensions.v2`。
+一次 `POST /api/mining/jobs` 自动执行行为提取、共享维度匹配、集中登记、全量原文检查、有限修订和候选评分标准生成，不产生 Skill Candidate 或 Test Dataset。
+已保存的合法自定义正文原样冻结；旧 v1 任务保留原协议路由。
 
-初版运行预算为提取最多 8 条、24,000 字符、96,000 字节，单条对话最多 20,000 字符；
-归并窗口最多 12 个成员、16,000 字符、64,000 字节。
-当前执行器串行提交，使用租户共享 Compile 槽，每单元最多修复 2 次。
-默认使用句子 ID；引文逐字匹配原文。
-完整案例不截断，过大案例标为待处理。
+输入为已登记的白名单 `model_cases` 知识源；Worker 校验父目录清单与每条原文摘要。
+直接 JSONL 原始对话可指定同知识源下的 `raw_dialogue_uri`，在同一次受理中自动准备。
+也可传入 `dialogue_input: {"format":"jsonl", "filename":"cases.jsonl", "content_base64":"…"}`（支持 xlsx），由同一 Worker 任务准备后继续执行。
+历史 findings、dimensions、评分与评价不进入模型。原始案例采用 `taikang.dialogue-case.v1`，紧凑模型视图保留全部原文字符及句子身份。
 
-Worker 为每次 Compile 建立独立输入目录，逐字复制本批未接受的案例文件或当前归并窗口，
-核对摘要与目录成员后把目录 URI 作为 `from`；OV 不接受单文件 `from`。
-输入位于任务的 `dialogue/recovery-<epoch>/units/<stage>-<number>/attempt-<attempt>-input`，
-输出位于相邻 `attempt-<attempt>`。明确请求拒绝保留脱敏 HTTP 状态与原因，
-停止本任务其他批次自动提交；超时或受理未知继续用原幂等键对账。
+新任务冻结完整 Skill、配置 revision 和预算。每个模型包只执行 extract、propose、match、register、audit、revise 或 rubric 之一。
+模型包上限 12,000 字符及 48,000 字节；每次 Compile 最多 4 包、合计 32,000 字符，使用一次文件 Map 和 Finalize。
+集中新增最多 2 轮、修订最多 1 轮；成功提取不重跑。完整案例超限保留 capacity_pending，不截断。
+未知提交用原幂等键对账，仅对失败单元最多补偿 2 次。
 
-`POST /api/mining/dialogue-datasets` 受理准备任务并返回 202。请求含 `output_uri`、
-`format`（`xlsx` 或 `jsonl`），以及原文件 `content_base64`；JSONL 也可提供 `source_uri`。
-原文件上限 20 MiB，请求上限 30 MiB，可选 `filename`、`dataset_namespace`、`dialogue_options`。
-Worker 白名单导入后返回 `prepared_source_uri`、`dataset_manifest_ref`、
-`dataset_manifest_sha256` 和计数；随后通过已有知识源登记接口将模型目录标为 Skill 来源。
-原工作簿、评分和评价不挂入 Compile。
+登记按当前目录逐页比较；没有全量比较结果不能新建维度。语义修订生成版本并重新检查全部案例。
+N/A 表示不适用，NE 表示证据不足，均不等于零分。档位是待独立校准的候选标准，不计算本批案例分数、权重或总分。
+结果在 `analysis/dialogue_dimensions_s2`，包括 dimensions、rubrics、methods、findings、memberships、audit、coverage、issues、lineage、sources，以及 manifest、validation 和 run_metrics。
+PG 是任务、回执、维度版本与统计的权威来源；OV 保存输入和交付制品。
+局部失败交付为 partial，不把未分析案例计入完成数。
 
-结果在 OV 的任务输出下 `analysis/dialogue_dimensions`，投影为
-`semantic_reports/dialogue_dimensions`，可通过已有制品预览接口逐文件读取。
-`delivery_status` 为 `complete` 或 `partial`，`validation_status` 为
-`passed`、`passed_with_warnings` 或 `blocked`。有真实回执才计入 `processed_case_count`。
-引文问题局部隔离，单样本支持、可选字段缺失、跨窗口近义重复允许交付。
-待处理单元补偿耗尽后状态为 `interrupted`，保留已接受结果；结构或来源安全错误为 `failed`。
-结构和定位检查不代表全部业务结论已经独立验证，`content_validated=false`。
-恢复部分交付使用 `POST /api/mining/jobs/{job_id}/resume` 和稳定的 `request_id`，
-原有恢复按钮自动携带并在丢回包重试时复用该 ID。成功案例回执复用，新的交付独立归档，
-旧拒绝状态清除；恢复仍使用受理时的 Skill 配置。修改 Skill、容量调整和新数据使用新任务。
+`GET /api/mining/settings` 返回 execution_protocol、default_version、default_sha256、effective_sha256、migration_status；S2 的 candidate_mode 为 none。
+查看默认、恢复默认与新任务冻结正文使用同一个生产资源。
+部署目标配置通过 `scripts/migrate_dialogue_dimensions_default.py --tenant <tenant> --expected-revision <revision>` 执行一次性 CAS 迁移。
+迁移在 PG 备份旧正文和 revision，保留无关配置，重复执行不会覆盖之后的用户修改。
+先应用 schema 018；应用启动不建表、不自动重置配置。
+
+独立数据准备接口 `POST /api/mining/dialogue-datasets` 仍可用于导入 XLSX 或 JSONL，返回 202。
+请求含 output_uri、format 和 content_base64；JSONL 也可指定 source_uri。原文件上限 20 MiB。
 
 这些控制台内部接口管理 OpenViking Compile 多轮执行与人工 Evidence 补充。需要有效的控制台 Session Cookie，当前租户身份为 `tenant_admin`，或平台身份为 `platform_admin`；普通成员与租户机器凭据不能调用。Agent 数据面协议保持不变。
 
 接口由 `team_miner/api/` 统一装配，Skill 挖掘业务位于 `team_miner/skill_miner/`，知识库挖掘位于 `team_miner/knowledge_miner/`。任务、轮次、补证与制品内容通过 [PostgreSQL Repository](../../../team_miner/skill_miner/repository.py) 持久化；临时工作目录只是可重建缓存。操作流程见 [多轮 Skill 挖掘](../guides/17-multi-round-skill-mining.md)。
 
-## 默认交付与候选资格
+## 历史 Skill 编译器交付与候选资格
 
-当前默认编译器为 `knowledge_compiler_v8.py` 的知识点 Skill 编译器，入口为 `team_miner/skill_miner/knowledge_compiler.py`。它声明 `completion_policy: te-compile-finished.v1`：TE 以远端 Compile 完成并保存返回产物记录挖掘完成，不把内容验收、Test Dataset 或人工批准作为完成条件。该模式不要求生成 `benchmark.json`，产物清单明确 `content_validated=false`、`can_submit=false`。
+历史知识点 Skill 编译器保存在 `knowledge_compiler_v8.py`，入口为 `team_miner/skill_miner/knowledge_compiler.py`。它声明 `completion_policy: te-compile-finished.v1`：TE 以远端 Compile 完成并保存返回产物记录挖掘完成，不把内容验收、Test Dataset 或人工批准作为完成条件。该模式不要求生成 `benchmark.json`，产物清单明确 `content_validated=false`、`can_submit=false`。
 
 因此，“挖掘完成”不等于“可进入 Candidate Review”。本文的能力计划、12–24条案例和人工 Evidence 问题契约，仅适用于显式使用该评审契约的任务；只完成交付的包不能直接提交，也不会由 TE 补造评测或案例。此类任务在轮数上限内可提交明确的修订要求继续下一轮，不能空转。支持评审的完整包通过当前独立候选的重新校验后，才进入下文的提交接口。
 
@@ -85,7 +75,7 @@ Skill 挖掘任务本身的 `/api/mining/jobs` 列表和详情沿用下文业务
 
 ## 创建任务
 
-`POST /api/mining/jobs` 使用以下主要字段：
+`POST /api/mining/jobs` 使用以下主要字段。下表的轮次和 Skill 数量适用于自定义历史编译器；S2 固定一次任务、不等待人工补证，忽略 Skill 数量目标：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
@@ -99,7 +89,7 @@ Skill 挖掘任务本身的 `/api/mining/jobs` 列表和详情沿用下文业务
 | `target_skill_count` | integer/null | 指定数量时必填 1–100；单 Skill 固定为 1；自由挖掘为 null 或省略 |
 | `runtime_timeout_seconds` | integer | 每轮执行保护期限，60–86400 秒（最高 24 小时），默认3600秒；可在网页配置或创建任务时调整，不是预计完成时间 |
 
-整轮任务使用 `execution_protocol: "te-native-mining.v1"`，每轮正常提交一次Compile；首轮完整构建，后续轮次使用本次补证、涉及的冻结原文和变更的产物上下文，增量更新相同的 `stable_output_uri`。`max_rounds` 是上限；问题为0时结束，不强制进入下一轮。
+历史整轮任务使用 `execution_protocol: "te-native-mining.v1"`，每轮正常提交一次Compile；首轮完整构建，后续轮次使用本次补证、涉及的冻结原文和变更的产物上下文，增量更新相同的 `stable_output_uri`。`max_rounds` 是上限；问题为0时结束，不强制进入下一轮。
 
 首轮从冻结的原始来源确定并保存主要语言，中文主导时使用简体中文。后续轮次沿用该语言，不由旧英文产物或补证语言重新决定。任务语言规则由运行时加入新的 Compile 请求，面向人的正文、说明、案例 Query、Checklist 自然语言、共享分析和复核问题按该语言生成；字段名、ID、文件路径、来源 URI、代码、固定枚举、原文直接引用及 `Checklist`、`Evidence`、`Materials` 等结构标签保持原样。当前接口与控制台均无独立的输出语言选择项。
 
@@ -107,7 +97,7 @@ Skill 挖掘任务本身的 `/api/mining/jobs` 列表和详情沿用下文业务
 
 采用多候选评审契约的任务使用 `candidate_contract_version: 2`，在一次原生Compile内部规划完整独立方法并生成配套产物。数量由任务目标与来源决定，不按文件、客户或子步骤机械拆分，不受旧宿主每批8候选限制。证据不足时保留真实处置说明，不凑数。
 
-此前保存的自定义编译 Skill 若仍采用单候选契约，新任务保留 `candidate_contract_version: 1` 并提示兼容性警告。重置为当前默认编译 Skill 后创建的新任务才启用多候选；已有任务仍保留其冻结契约。
+此前保存的自定义编译 Skill 若仍采用单候选契约，新任务保留 `candidate_contract_version: 1` 并提示兼容性警告。恢复当前默认值会切换为 S2 维度提取，不启用多候选。已有任务仍保留其冻结契约。
 
 整轮执行见 [原生整轮编译](../../../team_miner/skill_miner/native_round.py) 与 [编译 Skill](../../../team_miner/skill_miner/native_compiler.py)。每个方法的 METHOD.json 回执汇总为已有能力拆分计划；Test Dataset 的Markdown展示由JSON确定性渲染。受理响应丢失用原幂等键对账；只有明确的产物校验失败或输出截断允许每轮最多两次整轮修订。编译附件、来源、鉴权、网络及未知故障保留结构化诊断，不作为业务指令重新发送，原请求、错误和结果保留。
 

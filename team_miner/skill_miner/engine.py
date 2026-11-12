@@ -238,7 +238,7 @@ class SkillMiningEngine(MiningAdmissionMixin, MiningPollingMixin, MiningResource
             try:
                 from .dialogue_dimensions import is_dialogue
                 if is_dialogue(current):
-                    from .dialogue_dimensions.orchestration import tick
+                    from .dialogue_dimensions import tick
                     try:
                         await tick(self, current, action)
                     except ValueError as exc:
