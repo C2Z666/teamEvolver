@@ -32,5 +32,9 @@ __pycache__/
 !/my-doc/泰康-对话打分优化/develop/**/
 !/my-doc/泰康-对话打分优化/develop/**/*.md
 /my-doc/泰康-对话打分优化/develop/data-prepare/
-/my-doc/泰康-对话打分优化/develop/S2/展示界面/
+# Local viewers for all development stages.
+/my-doc/泰康-对话打分优化/develop/**/展示界面/
 /exports/
+
+# Generated S0 trial results (including Markdown indexes).
+/my-doc/泰康-对话打分优化/develop/S0/20条首测结果-20261110/
