@@ -5,7 +5,7 @@ import json
 from ..input import canonical, case_key, parse_model, sha
 from ..orchestration import frozen_read, update
 from ..transport import descendant
-from . import PROTOCOL, executor
+from . import PROTOCOL, audit_gaps, evidence_context, executor, match_pages
 from .compiler import sections
 from .input_view import DEFAULTS, model_view, packet
 from .matching import neighbors, recall
@@ -69,21 +69,27 @@ async def prepare(engine, job):
 
 
 async def enqueue(repo, run, stage, payload, split_key=None):
-    if stage != "extract" and payload.get("evidence"):
-        sources = payload.get("spans", [])
-        payload = {**payload, "evidence": [
-            {**{k: v for k, v in row.items() if k not in {"trigger_refs", "action_refs", "response_refs"}},
-             "source_span_refs": [s["span_ref"] for s in sources if case_key(s) == case_key(row)]}
-            for row in payload["evidence"]]}
     identity = sha(canonical([run["stage"], run["novelty_round"], run.get("register_proposal"), payload]))
     if identity in run["planned_packets"]:
         return
     if run["unit_count"] >= run["options"]["max_model_units"]:
         run["issues"].append({"reason": "model_unit_budget_exhausted", "stage": stage})
         return
+
+    def make_packet(content):
+        return packet(stage, content, None if stage == "extract" else run["registry_revision"],
+                      run["unit_count"] + 1, run["options"])
+
+    omitted = []
     try:
-        value = packet(stage, payload, None if stage == "extract" else run["registry_revision"],
-                       run["unit_count"] + 1, run["options"])
+        content = evidence_context.ground(run, payload) if stage != "extract" else payload
+        try:
+            value = make_packet(content)
+        except ValueError as exc:
+            if str(exc) != "capacity_pending" or stage not in {"revise", "rubric"}:
+                raise
+            content, omitted = evidence_context.select_to_budget(run, stage, payload, make_packet)
+            value = make_packet(content)
     except ValueError as exc:
         if str(exc) != "capacity_pending":
             raise
@@ -97,18 +103,12 @@ async def enqueue(repo, run, stage, payload, split_key=None):
                     used = {key for ids in child["allowed_candidates"].values() for key in ids}
                     child["dimensions"] = [d for d in payload["dimensions"] if d["dimension_id"] in used]
                 elif stage == "revise":
-                    child["evidence"], child["spans"] = representatives(run, rows)
+                    child["evidence"], child["audit_examples"] = evidence_context.representatives(run, rows)
                     child["metrics"] = {d["dimension_id"]: payload["metrics"][d["dimension_id"]] for d in rows}
                 await enqueue(repo, run, stage, child, split_key)
-        elif stage in {"revise", "rubric"} and len(payload.get("evidence", [])) > 1:
-            # These stages use representative observations, not exhaustive evidence coverage.
-            # Preserve complete source spans and audit gaps; select fewer whole observations.
-            selected = max(1, len(payload["evidence"]) // 2)
-            await enqueue(repo, run, stage, {**payload, "evidence": payload["evidence"][:selected]}, split_key)
-            issue = {"reason": "representative_sample_reduced", "stage": stage,
-                     "payload_hash": sha(canonical(payload)), "before": len(payload["evidence"]), "after": selected}
-            if issue not in run["issues"]:
-                run["issues"].append(issue)
+        elif stage == "match" and len(payload["evidence"]) == 1 and len(payload["dimensions"]) > 1:
+            for child in match_pages.split_payload(payload, run["registry_revision"], run["stage"]):
+                await enqueue(repo, run, stage, child, "evidence")
         else:
             run["issues"].append({"reason": "capacity_pending", "stage": stage,
                                   "case_ref": payload.get("case", {}).get("case_ref"),
@@ -118,8 +118,12 @@ async def enqueue(repo, run, stage, payload, split_key=None):
     run["unit_count"] += 1
     identifier = value["unit_id"]
     run["queue"].append(identifier)
-    for source in payload.get("spans", []):
-        run.setdefault("source_spans", {})[source["span_ref"]] = source
+    for source in content.get("spans", []):
+        version = source.get("case_version", content.get("source_versions", {}).get(source["case_ref"]))
+        run.setdefault("source_spans", {})[source["span_ref"]] = {**source, "case_version": version}
+    if omitted:
+        run.setdefault("representative_selections", []).append({"unit_id": identifier, "stage": stage,
+            "summary": content["representative_selection"], "omitted": omitted})
     metrics = run["metrics"]
     metrics["stage_units"][stage] = metrics["stage_units"].get(stage, 0) + 1
     metrics["peak_packet_chars"] = max(metrics["peak_packet_chars"], len(canonical(value)))
@@ -132,38 +136,16 @@ def groups(rows, count):
 
 def unresolved(run):
     return [row for key, row in run["evidence"].items()
-            if run["dispositions"].get(key) in {"unresolved", "unmatched", "deferred"}]
+            if run["dispositions"].get(key) in {"unresolved", "unmatched", "deferred", "uncertain"}]
 
 
 def spans(run, evidence, assessments=()):
-    result, seen = [], set()
-    # A bounded revision/rubric packet must not crowd out audit counterevidence with positive examples.
-    references = [(row, row["counter_refs"] + row["support_refs"]) for row in assessments]
-    references += [(row, row["trigger_refs"] + row["action_refs"] + row["response_refs"]) for row in evidence]
-    for row, ids in references:
-        case = run["cases"][case_key(row)]
-        index = {s["sentence_id"]: s for s in case["sentence_index"]}
-        for ref in ids:
-            key = case_key(row) + ":" + ref
-            if key in seen:
-                continue
-            seen.add(key)
-            sentence = index[ref]
-            result.append({"span_ref": "span-" + sha(key)[:24], "case_ref": row["case_ref"],
-                           "case_version": row["case_version"], "sentence_ids": [ref],
-                           "text": case["dialogue_text"][sentence["char_start"]:sentence["char_end"]]})
-    return result[:run["options"]["representative_spans"]]
+    return evidence_context.ground(run, {"evidence": evidence, "audit_examples": list(assessments)})["spans"]
 
 
 def representatives(run, dimensions):
-    versions = {row["dimension_id"]: row["version"] for row in dimensions}
-    evidence_ids = {link["evidence_id"] for link in run["memberships"]
-                    if versions.get(link["dimension_id"]) == link["version"]}
-    evidence = [run["evidence"][key] for key in sorted(evidence_ids)]
-    evidence.sort(key=lambda row: (row["value_status"] != "mixed", row["case_ref"]))
-    assessments = [a for a in run["audits"] if versions.get(a["dimension_id"]) == a["version"]]
-    assessments.sort(key=lambda row: (row["signal"] not in {"mixed", "counter"}, row["case_ref"]))
-    return evidence[:6], spans(run, evidence[:3], assessments[:3])
+    evidence, assessments = evidence_context.representatives(run, dimensions)
+    return evidence, spans(run, evidence, assessments)
 
 
 async def plan(engine, job, repo, run):
@@ -192,10 +174,8 @@ async def plan(engine, job, repo, run):
     elif stage in {"match", "expanded_match", "rematch", "revision_match"}:
         rows = unresolved(run)
         if stage == "revision_match":
-            affected = {m["evidence_id"] for m in run["memberships"]
-                        if m["dimension_id"] in run["changed"] or
-                        run["dimensions"][m["dimension_id"]]["status"] == "superseded"}
-            rows = [run["evidence"][key] for key in sorted(affected)]
+            rows = [row for key, row in run["evidence"].items() if run["dispositions"].get(key) != "routine"] \
+                if run["changed"] else []
         limit = options["candidate_top_k"] if stage == "match" else options["expanded_candidate_limit"]
         candidates = await recall(engine, job, repo, run, rows, dimensions, limit)
         for batch in groups(rows, options["match_items"]):
@@ -209,19 +189,32 @@ async def plan(engine, job, repo, run):
         for case in run["cases"].values():
             for batch in groups(dimensions, options["audit_dimensions"]):
                 await enqueue(repo, run, "audit", {"case": model_view(case), "dimensions": batch}, "dimensions")
+    elif stage in {"gap_review", "gap_review_final"}:
+        for gap in run["gaps"]:
+            if gap.get("status") in {"covered", "new_candidate", "needs_review"}:
+                continue
+            for i, batch in enumerate(groups(dimensions, options["register_page_dimensions"])):
+                await enqueue(repo, run, "register", {"proposal": audit_gaps.proposal(gap), "dimensions": batch,
+                    "page_id": str(i), "gap_ref": gap["member_ref"]}, "dimensions")
     elif stage == "revise":
-        for batch in groups(dimensions, 3):
-            evidence, source = representatives(run, batch)
+        for batch in await neighbors(engine, job, repo, run, dimensions, 3):
+            evidence, assessments = evidence_context.representatives(run, batch)
             metrics = {d["dimension_id"]: counts(run, d) for d in batch}
-            await enqueue(repo, run, "revise", {"dimensions": batch, "evidence": evidence, "spans": source,
-                                                "metrics": metrics, "audit_gaps": run["gaps"][:6]}, "dimensions")
+            await enqueue(repo, run, "revise", {"dimensions": batch, "evidence": evidence,
+                "audit_examples": assessments, "metrics": metrics, "audit_gaps": []}, "dimensions")
+        for gap in run["gaps"]:
+            if gap.get("status") == "new_candidate":
+                await enqueue(repo, run, "revise", {"dimensions": [], "evidence": [], "audit_examples": [],
+                    "metrics": {}, "audit_gaps": [gap]})
     elif stage == "rubric":
         for dimension in dimensions:
-            evidence, source = representatives(run, [dimension])
+            evidence, assessments = evidence_context.representatives(run, [dimension])
             methods = sorted({m["method_text"] for m in run["memberships"]
                               if m["dimension_id"] == dimension["dimension_id"] and
-                              m["version"] == dimension["version"] and m["method_text"]})[:6]
-            await enqueue(repo, run, "rubric", {"dimension": dimension, "evidence": evidence, "spans": source,
+                              m.get("active", True) and
+                              m["version"] == dimension["version"] and m["method_text"]})
+            await enqueue(repo, run, "rubric", {"dimension": dimension, "evidence": evidence,
+                                                "audit_examples": assessments,
                                                 "methods": methods, "scale": [0, 1, 2, 3]})
     run["planned"] = True
     await repo.save(run)
@@ -265,14 +258,20 @@ async def registration(engine, job, repo, run):
 
 def advance(run):
     stage = run["stage"]
+    if stage in {"audit", "recheck"}:
+        audit_gaps.consolidate(run)
+    elif stage in {"gap_review", "gap_review_final"}:
+        audit_gaps.finalize(run)
     if stage == "revise":
         for identifier, status in run.pop("pending_demotions", {}).items():
             run["registry_revision"] += 1
             dimension = run["dimensions"][identifier]
             dimension.update(status=status, registry_revision=run["registry_revision"])
             run["versions"].append(dict(dimension))
-    following = {"extract": "bootstrap", "match": "expanded_match", "audit": "revise",
-                 "revision_match": "recheck", "recheck": "rubric", "rubric": "assemble"}
+            run["changed"].append(identifier)
+    following = {"extract": "bootstrap", "match": "expanded_match", "audit": "gap_review", "gap_review": "revise",
+                 "revision_match": "recheck", "recheck": "gap_review_final", "gap_review_final": "rubric",
+                 "rubric": "assemble"}
     if stage in {"bootstrap", "novelty", "revise"}:
         run["after_register"] = {"bootstrap": "match", "novelty": "rematch", "revise": "revision_match"}[stage]
         run["stage"] = "register"

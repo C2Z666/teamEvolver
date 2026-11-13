@@ -73,3 +73,100 @@ async def test_unknown_post_reconciles_without_reextracting(monkeypatch):
     await executor.step(engine, job, repo, run, consume)
     assert not run["queue"]
     assert len(posts) == 1
+
+
+@pytest.mark.asyncio
+async def test_remote_rate_limit_backs_off_without_spending_semantic_repairs(monkeypatch):
+    from team_miner.skill_miner.mining_contracts import utc_now
+
+    repo, run = MemoryRepository(), run_state()
+    await enqueue(repo, run, "extract", {"case": model_view(case())})
+    packet = (await repo.get("unit-000001"))["packet"]
+    run["active"] = {"task_id": "limited", "key": "original-key", "units": ["unit-000001"],
+                     "submitted_at": utc_now(), "request": {"from": ["viking://resources/in"],
+                                                           "to": "viking://resources/out"}}
+    job = {"job_id": "one", "account": "test", "compiler_body_snapshot": SKILL_BODY,
+           "runtime_timeout_seconds": 3600}
+    posts, store = [], {}
+
+    async def read(engine, job, uri):
+        if uri == "viking://resources/in/unit-000001.md":
+            return canonical(packet)
+        if uri in store:
+            return store[uri]
+        raise HTTPException(404, "missing output")
+
+    async def write(engine, job, uri, text):
+        store[uri] = text
+
+    async def request(account, method, path, **kwargs):
+        if path == "/api/v1/tasks/limited":
+            return {"task_id": "limited", "status": "failed",
+                    "error": "COMPILE_INCOMPLETE: Error code: 429 ModelAccountTpmRateLimitExceeded"}
+        if path == "/api/v1/fs/ls":
+            return [{"uri": key} for key in store if key.startswith(kwargs["params"]["uri"] + "/")]
+        if path.startswith("/api/v1/compile/submissions/"):
+            raise HTTPException(404, "absent")
+        if path == "/api/v1/compile":
+            assert "ModelAccountTpmRateLimitExceeded" not in kwargs["json"]["instruction"]
+            assert "Repair failed assignments" not in kwargs["json"]["instruction"]
+            posts.append(kwargs["extra_headers"]["Idempotency-Key"])
+            return {"task_id": "retry-transport"}
+        raise AssertionError(path)
+
+    async def update(engine, job, **fields):
+        job.update(fields)
+        return job
+
+    async def noop(*args, **kwargs):
+        return True
+
+    engine = SimpleNamespace(tenant="alpha", _round_client=lambda job: None, _round_provision_compiler=noop,
+                             _knowledge_request=request,
+                             admission=SimpleNamespace(acquire=noop, release=noop, mark=noop))
+    monkeypatch.setattr(executor, "read", read)
+    monkeypatch.setattr(executor, "write", write)
+    monkeypatch.setattr(executor, "update", update)
+    await executor.step(engine, job, repo, run, consume)
+    unit = await repo.get("unit-000001")
+    assert unit["attempt"] == 0 and unit["transport_attempt"] == 1
+    assert run["metrics"]["retries"] == 0 and run["metrics"]["transport_retries"] == 1
+    await executor.step(engine, job, repo, run, consume)
+    assert not posts  # No hot retry while the account is rate-limited.
+    run["compile_not_before"] = "2000-01-01T00:00:00+00:00"
+    await executor.step(engine, job, repo, run, consume)
+    assert len(posts) == 1 and posts[0] != "original-key"
+    assert run["active"]["task_id"] == "retry-transport"
+    assert (await repo.get("unit-000001"))["attempt"] == 0
+
+
+@pytest.mark.asyncio
+async def test_remote_rate_limit_has_finite_transport_budget(monkeypatch):
+    from team_miner.skill_miner.mining_contracts import utc_now
+
+    repo, run = MemoryRepository(), run_state()
+    await enqueue(repo, run, "extract", {"case": model_view(case())})
+    unit = await repo.get("unit-000001")
+    unit["transport_attempt"] = run["options"]["transport_retry_attempts"]
+    await repo.save(run, **{"unit-000001": unit})
+    run["active"] = {"task_id": "limited", "key": "key", "units": ["unit-000001"],
+        "submitted_at": utc_now(), "request": {"from": ["viking://resources/in"], "to": "viking://resources/out"}}
+
+    async def read(engine, job, uri):
+        if uri.startswith("viking://resources/in/"):
+            return canonical(unit["packet"])
+        raise HTTPException(404, "missing")
+
+    async def request(*args, **kwargs):
+        return {"task_id": "limited", "status": "failed", "error": "Error code: 429 TooManyRequests"}
+
+    async def noop(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr(executor, "read", read)
+    monkeypatch.setattr(executor, "update", noop)
+    engine = SimpleNamespace(_knowledge_request=request, admission=SimpleNamespace(release=noop))
+    await executor.step(engine, {"account": "test"}, repo, run, consume)
+    assert (await repo.get("unit-000001"))["status"] == "deferred"
+    assert run["issues"][-1]["reason"] == "upstream_rate_limit_exhausted"
+    assert run["metrics"]["retries"] == 0

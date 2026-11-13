@@ -138,7 +138,7 @@ async def test_delivery_preserves_span_identity_and_reports_partial(monkeypatch)
     assert metrics["phase_wall_seconds"] == "unavailable"
 
 
-def test_representative_budget_prioritizes_audit_counterevidence():
+def test_legacy_sentence_count_does_not_truncate_behavior_or_counter_context():
     run = run_state()
     run["options"]["representative_spans"] = 1
     raw = next(iter(run["cases"].values()))
@@ -146,8 +146,8 @@ def test_representative_budget_prioritizes_audit_counterevidence():
     evidence = {**observation(), **identity}
     audit = {**identity, "support_refs": ["s000001"], "counter_refs": ["s000002"]}
     result = flow.spans(run, [evidence], [audit])
-    assert len(result) == 1
-    assert result[0]["sentence_ids"] == ["s000002"]
+    assert {s["sentence_ids"][0] for s in result} == {"s000001", "s000002", "s000003"}
+    assert any(s["speaker"] == "HWP" for s in result)
 
 
 @pytest.mark.asyncio
@@ -227,5 +227,6 @@ async def test_revision_capacity_sampling_preserves_whole_spans_and_records_sele
     assert [row["evidence_id"] for row in unit["packet"]["payload"]["evidence"]] == ["mixed"]
     assert unit["packet"]["payload"]["spans"] == original_spans
     assert len(run["evidence"]) == 2
-    assert [(i["reason"], i["before"], i["after"]) for i in run["issues"]] == [
-        ("representative_sample_reduced", 2, 1)]
+    selection = run["representative_selections"][0]
+    assert selection["summary"]["evidence"] == {"available": 2, "selected": 1, "omitted": 1}
+    assert selection["omitted"][0]["row"]["evidence_id"] == "positive"

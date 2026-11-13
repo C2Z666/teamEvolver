@@ -62,12 +62,16 @@ async def recall(engine, job, repo, run, evidence, dimensions, limit):
 async def neighbors(engine, job, repo, run, rows, limit):
     if not rows:
         return []
+    if len(rows) <= limit:
+        return [rows]
     embedded = await vectors(engine, job, repo, run, rows)
     remaining, batches = set(range(len(rows))), []
     while remaining:
-        first = min(remaining, key=lambda i: rows[i]["evidence_id"])
+        def identity(i):
+            return rows[i].get("evidence_id", rows[i].get("dimension_id"))
+        first = min(remaining, key=identity)
         indices = sorted(remaining, key=lambda i: (-cosine(embedded[first], embedded[i]),
-                                                   rows[i]["evidence_id"]))[:limit]
+                                                   identity(i)))[:limit]
         batches.append([rows[i] for i in indices])
         remaining.difference_update(indices)
     return batches

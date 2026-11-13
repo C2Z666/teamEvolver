@@ -20,7 +20,11 @@
 N/A 表示不适用，NE 表示证据不足，均不等于零分。档位是待独立校准的候选标准，不计算本批案例分数、权重或总分。
 结果在 `analysis/dialogue_dimensions_s2`，包括 dimensions、rubrics、methods、findings、memberships、audit、coverage、issues、lineage、sources，以及 manifest、validation 和 run_metrics。
 PG 是任务、回执、维度版本与统计的权威来源；OV 保存输入和交付制品。
-局部失败交付为 partial，不把未分析案例计入完成数。
+Evidence 按案例版本和具体句子绑定触发、HWP 行为与客户回应，代表材料按完整轮次和包预算选择；省略记录见 representative_selections。局部审计的 uncovered 经全目录分页核对后，确认的遗漏才进入新增修订；核对记录见 gap_reviews。
+扩大匹配中单条 Evidence 的候选卡超限时分页比较，收齐该范围全部页后汇总；逐页结果见 match_reviews，缺页保持待处理。
+uncertain Evidence 继续有界匹配。局部失败、未解决 Evidence/gap 或 pending rubric 交付为 partial，不把未分析案例计入完成数；rubric_readiness 和独立校准状态分别呈现。
+
+远端 Compile 因模型账户限流失败且未产出回执时，使用独立传输重试预算：默认最多 5 次，退避 60、120、240、480、480 秒。限流不消耗语义修复次数，也不作为业务修复指令；已接受的子任务不重跑。耗尽后保留 deferred 并交付 partial，统计见 transport_retries。
 
 `GET /api/mining/settings` 返回 execution_protocol、default_version、default_sha256、effective_sha256、migration_status；S2 的 candidate_mode 为 none。
 查看默认、恢复默认与新任务冻结正文使用同一个生产资源。

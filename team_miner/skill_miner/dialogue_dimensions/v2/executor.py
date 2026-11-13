@@ -1,6 +1,6 @@
 """Bounded file Map submission, reconciliation and partial child recovery."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from starlette.exceptions import HTTPException
 
@@ -43,6 +43,9 @@ async def step(engine, job, repo, run, consume):
     if active is None:
         if cancelling:
             return await update(engine, job, status="stopped", delivery_status="partial", finished_at=utc_now())
+        not_before = run.get("compile_not_before")
+        if not_before and elapsed(not_before) < 0:
+            return
         units, total = [], 0
         for identifier in run["queue"]:
             unit = await repo.get(identifier)
@@ -64,7 +67,9 @@ async def step(engine, job, repo, run, consume):
         name, published, _ = _compiler_package(sliced)
         await engine._round_provision_compiler(engine._round_client(job), name, published)
         key = "te-s2-" + sha(canonical([engine.tenant, job["job_id"], run["skill_hash"],
-                                     [(u["packet"]["input_hash"], u["attempt"]) for u in units]]))
+                                     [[u["packet"]["input_hash"], u["attempt"],
+                                       *([u["transport_attempt"]] if u.get("transport_attempt") else [])]
+                                      for u in units]]))
         root = f"{RUNS_ROOT}/{job['job_id']}/s2/{key}"
         for unit in units:
             unit["stage_hash"] = sha(sliced)
@@ -83,7 +88,7 @@ async def step(engine, job, repo, run, consume):
         instruction = (TRANSPORT_INSTRUCTION + "\nReceipt envelope schema (result uses task.result_schema): " +
                        canonical(Receipt.model_json_schema()))
         repairs = [{"unit_id": u["packet"]["unit_id"], "validation_error": u["error"]}
-                   for u in units if u.get("error")]
+                   for u in units if u.get("error") and u.get("failure_kind") != "transport"]
         if repairs:
             instruction += "\nRepair failed assignments, preserving frozen identity: " + canonical(repairs)
         active = {"key": key, "units": [u["packet"]["unit_id"] for u in units], "submitted_at": utc_now(),
@@ -151,6 +156,8 @@ async def step(engine, job, repo, run, consume):
         return await update(engine, job, status="stopped", delivery_status="partial",
                             remote_terminal_unconfirmed=False, finished_at=utc_now())
     failure_text = str(task.get("error") or task.get("message") or "").lower()
+    rate_limited = status == "failed" and any(marker in failure_text for marker in (
+        "modelaccounttpmratelimitexceeded", "toomanyrequests", "error code: 429", "rate_limit_exceeded"))
     capacity_failure = any(marker in failure_text for marker in (
         "context_length", "context window", "maximum context", "token budget", "input too long"))
     for identifier in active["units"]:
@@ -166,8 +173,26 @@ async def step(engine, job, repo, run, consume):
         except (ValueError, HTTPException) as exc:
             if isinstance(exc, HTTPException) and exc.status_code != 404:
                 raise
-            unit.update(error=str(exc)[:1000], status="retry_wait")
-            if capacity_failure:
+            unit.update(error=str(exc)[:1000], status="retry_wait", failure_kind="receipt")
+            if rate_limited and isinstance(exc, HTTPException) and exc.status_code == 404:
+                unit["failure_kind"] = "transport"
+                attempts = unit.get("transport_attempt", 0)
+                limit = run["options"].get("transport_retry_attempts", 5)
+                if attempts >= limit:
+                    unit["status"] = "deferred"
+                    run["issues"].append({"unit_id": identifier, "reason": "upstream_rate_limit_exhausted"})
+                else:
+                    unit["transport_attempt"] = attempts + 1
+                    delay = run["options"].get("transport_retry_delay_seconds", 60) * min(2 ** attempts, 8)
+                    deadline = datetime.now(timezone.utc) + timedelta(seconds=delay)
+                    if run.get("compile_not_before"):
+                        deadline = max(deadline, datetime.fromisoformat(run["compile_not_before"]))
+                    run["compile_not_before"] = deadline.isoformat()
+                    run["metrics"]["transport_retries"] = run["metrics"].get("transport_retries", 0) + 1
+                    run["issues"].append({"unit_id": identifier, "reason": "upstream_rate_limit_retry",
+                                          "attempt": attempts + 1, "delay_seconds": delay})
+                unit["error"] = failure_text[:1000]
+            elif capacity_failure:
                 unit["status"] = "deferred"
                 run["issues"].append({"unit_id": identifier, "reason": "capacity_pending"})
             elif unit["attempt"] >= run["options"]["repair_attempts_per_unit"]:

@@ -23,6 +23,12 @@ Output lives under `analysis/dialogue_dimensions_s2`, with dimensions, rubrics, 
 PG is authoritative for jobs, receipts, versions and statistics. OV stores input and delivery artifacts.
 Local failures produce partial delivery and never count unprocessed cases as complete.
 
+Evidence references bind exact sentences and case versions, retaining triggers, HWP actions and responses. Representative selection keeps whole turns within packet budgets; representative_selections records omissions. Packet-local uncovered findings are checked against the full registry before proposing additions; gap_reviews records these comparisons.
+If one Evidence item and its candidate cards exceed the packet budget, matching uses candidate pages and combines decisions only after every page is received. match_reviews retains page decisions; missing pages remain pending.
+Uncertain Evidence continues through bounded matching. Unresolved Evidence or gaps and pending rubrics make delivery partial. rubric_readiness and independent calibration are reported separately.
+
+When a remote Compile fails because of model-account rate limiting and produces no receipt, a separate transport budget allows up to five retries by default, with delays of 60, 120, 240, 480 and 480 seconds. Rate limiting does not consume semantic repair attempts or become a business repair instruction; accepted children are not repeated. Exhaustion leaves the unit deferred and delivery partial. transport_retries reports the retry count.
+
 `GET /api/mining/settings` exposes execution_protocol, default_version, default_sha256, effective_sha256 and migration_status. S2 has candidate_mode=none.
 Default viewing, reset and new-job snapshots use one production resource.
 Migrate the deployment target explicitly with `scripts/migrate_dialogue_dimensions_default.py --tenant <tenant> --expected-revision <revision>`.

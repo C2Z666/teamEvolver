@@ -28,8 +28,25 @@ def validate(text, task):
     sentences = {row["sentence_id"]: row for row in payload.get("case", {}).get("fragments", [])
                  if "sentence_id" in row}
     spans = {row["span_ref"] for row in payload.get("spans", [])}
+    if payload.get("context_contract") == "exact-evidence-v1":
+        sources = {row["span_ref"]: row for row in payload.get("spans", [])}
+        for evidence in payload.get("evidence", []):
+            role_refs = [ref for role in ("trigger_refs", "action_refs", "response_refs") for ref in evidence[role]]
+            require(set(role_refs) == set(evidence["source_span_refs"]), "evidence_reference_roles_mismatch")
+            require(bool(evidence["action_refs"]), "evidence_missing_action")
+            for ref in role_refs:
+                source = sources.get(ref)
+                version = (source.get("case_version", payload.get("source_versions", {}).get(source["case_ref"]))
+                           if source else None)
+                require(source is not None and source["case_ref"] == evidence["case_ref"]
+                        and version == evidence["case_version"],
+                        "evidence_source_missing_or_foreign")
+            require(all(sources[ref]["speaker"] == "HWP" for ref in evidence["action_refs"]),
+                    "evidence_action_requires_hwp")
     members = {row.get("member_ref", row.get("evidence_id")) for row in payload.get("evidence", [])}
     members.update(row["member_ref"] for row in payload.get("audit_gaps", []))
+    if stage == "register":
+        members.update(payload["proposal"].get("member_refs", []))
 
     def refs(values, allowed):
         invalid = set(values) - set(allowed)
@@ -131,6 +148,8 @@ def validate(text, task):
                 require(row["target_status"] is not None, "missing_demotion_status")
             for card in cards:
                 refs(card["member_refs"], members)
+                if action == "add":
+                    require(bool(card["member_refs"]), "new_dimension_requires_source_member")
     else:
         target(result)
         scores = [row["score"] for row in result["anchors"]]

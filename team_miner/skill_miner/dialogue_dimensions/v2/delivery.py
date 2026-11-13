@@ -34,16 +34,28 @@ async def finish(engine, job, repo, run):
     coverage += [{"kind": "rubric", "dimension_id": d["dimension_id"], "version": d["version"],
                   "status": run["rubrics"].get(d["dimension_id"], {}).get("rubric_status", "pending")}
                  for d in dimensions]
+    pending_evidence = sum(run["dispositions"].get(key) not in {"attached", "routine"} for key in run["evidence"])
+    pending_gaps = sum(g.get("status") not in {"covered", "addressed"} for g in run["gaps"])
+    pending_rubrics = sum(run["rubrics"].get(d["dimension_id"], {}).get("rubric_status") != "provisional"
+                          or run["rubrics"].get(d["dimension_id"], {}).get("version") != d["version"]
+                          for d in dimensions)
+    pending_revisions = sum(bool(p.get("revision")) and p["status"] != "registered" for p in run["proposals"])
     partial = (len(run["extracted"]) != len(run["cases"]) or
                any(counts(run, d)["covered"] != len(run["cases"]) for d in dimensions) or
-               any(d["dimension_id"] not in run["rubrics"] for d in dimensions) or
+               pending_evidence > 0 or pending_gaps > 0 or pending_rubrics > 0 or pending_revisions > 0 or
                any(i.get("reason") in {"model_unit_budget_exhausted", "capacity_pending", "receipt_failed",
-                                       "compile_request_rejected"} or i.get("status") == "input_pending"
+                                       "compile_request_rejected", "revision_conflict", "revision_identity_conflict",
+                                       "incomplete_split_parent_retained", "upstream_rate_limit_exhausted"}
+                   or i.get("status") == "input_pending"
                    for i in run["issues"]))
     validation = {"delivery_status": "partial" if partial else "complete", "validation_status": "passed_with_warnings",
                   "content_validated": False, "independent_calibration": "pending", "review_status": "recommended",
                   "processed_case_count": len(run["extracted"]),
                   "pending_case_count": len(run["cases"])-len(run["extracted"]),
+                  "pending_evidence_count": pending_evidence, "pending_gap_count": pending_gaps,
+                  "pending_rubric_count": pending_rubrics,
+                  "pending_revision_count": pending_revisions,
+                  "rubric_readiness": "pending" if pending_rubrics else "provisional",
                   "dimension_count": len(dimensions)}
     entries = []
 
@@ -60,6 +72,10 @@ async def finish(engine, job, repo, run):
     # Frozen raw sources and sentence coordinates make every delivered span independently recoverable.
     collections["sources"] = list(run["cases"].values())
     collections["spans"] = list(run.get("source_spans", {}).values())
+    collections["representative_selections"] = run.get("representative_selections", [])
+    collections["gap_reviews"] = [{"member_ref": key, "comparisons": rows}
+                                  for key, rows in run.get("gap_comparisons", {}).items()]
+    collections["match_reviews"] = list(run.get("match_scopes", {}).values())
     for name, rows in collections.items():
         for offset in range(0, len(rows), 50):
             batch = rows[offset:offset + 50]

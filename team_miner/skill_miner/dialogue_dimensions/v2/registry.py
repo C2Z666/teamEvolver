@@ -3,6 +3,7 @@
 from uuid import uuid4
 
 from ..input import case_key
+from . import match_pages
 
 
 def current(run):
@@ -23,20 +24,26 @@ def link(run, evidence_id, dimension, relation, decision, method=""):
 
 def register(run, proposal, comparisons):
     """Only a complete current snapshot can authorize a new concept identity."""
+    def defer():
+        proposal["status"] = "deferred"
+        for member in proposal["member_refs"]:
+            if member in run["evidence"] and run["dispositions"].get(member) != "attached":
+                run["dispositions"][member] = "deferred"
+
     exclude = set(proposal.get("replace_sources", []))
     dimensions = {row["dimension_id"]: row for row in current(run) if row["dimension_id"] not in exclude}
     compared = {row["dimension_id"] for row in comparisons}
     if compared != set(dimensions) or any(dimensions[row["dimension_id"]]["version"] != row["version"]
                                          for row in comparisons):
-        proposal["status"] = "deferred"
+        defer()
         return
     targets = {row["dimension_id"] for row in comparisons if row["relation"] in {"same_dimension", "method_of"}}
     if len(targets) > 1 or any(row["relation"] == "uncertain" for row in comparisons):
-        proposal["status"] = "deferred"
+        defer()
         return
     if targets and exclude:
         # A revision colliding with another identity needs an explicit merge proposal.
-        proposal["status"] = "deferred"
+        defer()
         run["issues"].append({"reason": "revision_identity_conflict", "proposal_id": proposal["proposal_id"]})
         return
     if targets:
@@ -66,6 +73,9 @@ def register(run, proposal, comparisons):
         relation = "same_dimension"
     for member in proposal["member_refs"]:
         link(run, member, dimension, relation, proposal["proposal_id"])
+        for gap in run["gaps"]:
+            if gap["member_ref"] == member:
+                gap.update(status="addressed", covered_by=[dimension["dimension_id"]])
     proposal.update(status="registered", dimension_id=dimension["dimension_id"], version=dimension["version"])
 
 
@@ -112,21 +122,40 @@ def consume(run, unit, receipt):
             run["dispositions"][evidence_id] = "routine" if row["value_status"] == "routine" else "unresolved"
         run["issues"].extend({**issue, "unit_id": identifier} for issue in result.get("isolated", []))
     elif stage == "propose":
+        proposed_members = {member for row in result["proposals"] for member in row["member_refs"]}
         for row in result["proposals"]:
             run["proposals"].append({**row, "proposal_id": identifier + ":" + row["proposal_ref"], "status": "planned"})
+        for member in proposed_members:
+            if run["dispositions"].get(member) != "attached":
+                run["dispositions"][member] = "unresolved"
         for row in result["dispositions"]:
+            if row["member_ref"] in proposed_members and row["action"] in {"routine", "defer"}:
+                if row["action"] == "routine":
+                    run["issues"].append({"reason": "proposal_disposition_conflict", "unit_id": identifier,
+                                          "member_ref": row["member_ref"]})
+                continue
             if row["action"] == "existing_method":
                 link(run, row["member_ref"], run["dimensions"][row["target_dimension_id"]], "method_of", identifier)
             else:
                 run["dispositions"][row["member_ref"]] = "routine" if row["action"] == "routine" else "deferred"
     elif stage == "match":
-        for row in result["decisions"]:
+        decisions = result["decisions"]
+        if payload.get("match_scope"):
+            decisions = match_pages.consume_page(run, payload, decisions, identifier)
+        for row in decisions:
             run["dispositions"][row["evidence_id"]] = row["action"]
+            # Preserve history, but a fresh decision supersedes previous active associations.
+            for membership in run["memberships"]:
+                if membership["evidence_id"] == row["evidence_id"]:
+                    membership["active"] = False
             for target in row["targets"]:
                 link(run, row["evidence_id"], run["dimensions"][target["dimension_id"]], target["relation"], identifier,
-                     row["method_text"])
+                     target.get("method_text", row["method_text"]))
     elif stage == "register":
-        run["register_comparisons"].extend(result["comparisons"])
+        if payload.get("gap_ref"):
+            run.setdefault("gap_comparisons", {}).setdefault(payload["gap_ref"], []).extend(result["comparisons"])
+        else:
+            run["register_comparisons"].extend(result["comparisons"])
     elif stage == "audit":
         case = payload["case"]
         for row in result["assessments"]:
@@ -134,12 +163,21 @@ def consume(run, unit, receipt):
                                   "unit_id": identifier})
         for i, row in enumerate(result["uncovered"]):
             run["gaps"].append({**row, "member_ref": identifier + f":gap-{i}",
-                                "case_ref": case["case_ref"], "case_version": case["case_version"]})
+                                "case_ref": case["case_ref"], "case_version": case["case_version"],
+                                "status": "pending", "local_dimensions": [
+                                    {"dimension_id": d["dimension_id"], "version": d["version"]}
+                                    for d in payload["dimensions"]]})
     elif stage == "revise":
         for number, change in enumerate(result["changes"]):
             action, sources = change["action"], change["source_dimension_ids"]
             if action == "keep":
                 continue
+            claimed = run.setdefault("revision_patch_sources", {})
+            if any(source in claimed for source in sources):
+                run["issues"].append({"reason": "revision_conflict", "unit_id": identifier,
+                                      "source_dimension_ids": sources})
+                continue
+            claimed.update({source: identifier for source in sources})
             if action == "demote":
                 # Defer registry mutation until all read-only revision packets have been consumed.
                 run.setdefault("pending_demotions", {})[sources[0]] = change["target_status"]

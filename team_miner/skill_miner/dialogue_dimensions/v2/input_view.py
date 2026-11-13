@@ -6,10 +6,11 @@ from . import PROTOCOL
 DEFAULTS = {
     "seed_cases_per_point": 2, "seed_case_limit": 54, "propose_items": 8, "proposals_per_packet": 3,
     "match_items": 8, "candidate_top_k": 5, "expanded_candidate_limit": 12,
-    "register_page_dimensions": 6, "audit_dimensions": 4, "representative_spans": 6,
+    "register_page_dimensions": 6, "audit_dimensions": 4,
     "packet_input_chars": 12000, "packet_input_bytes": 48000, "packets_per_compile": 4,
     "compile_input_chars": 32000, "max_inflight_compiles": 1, "novelty_rounds": 2,
     "revision_rounds": 1, "repair_attempts_per_unit": 2, "max_model_units": 1500,
+    "transport_retry_attempts": 5, "transport_retry_delay_seconds": 60,
 }
 
 

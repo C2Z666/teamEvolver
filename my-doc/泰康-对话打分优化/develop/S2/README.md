@@ -38,7 +38,7 @@ S2 使用 teamEvolver 编排业务状态机，PostgreSQL 保存可变状态，�
 全流程可概括为：
 
 ```text
-prepare → extract → bootstrap → match → novelty → audit → revise → recheck → rubric → assemble
+prepare → extract → bootstrap → match → novelty → audit → gap_review → revise → recheck → gap_review_final → rubric → assemble
 ```
 
 其中 bootstrap/novelty 调用相同的 propose 与 register 阶段；没有两个独立挖掘任务。空阶段自动跳过，修订次数有界。所有参数在受理时冻结。
@@ -64,3 +64,5 @@ prepare → extract → bootstrap → match → novelty → audit → revise →
 2026-11-12 已完成：新 Skill 基础校验；S2 内部链接和 JSON 示例校验；全部阶段标记唯一性与单阶段裁剪检查；仓库文档引用严格检查（0 错误、0 警告）；`tests/contracts/test_docs.py`（6 passed）。
 
 以上是原设计交付时的检查；开发后的结果另见实施与验证记录，不以文档检查代替真实模型验收。
+
+高优先级问题与后续真实运行证据见 [问题记录](./问题记录/01-高优先级问题与修复方案.md)。
