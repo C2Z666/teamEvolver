@@ -175,3 +175,13 @@ Agent 使用租户 Key 加声明的 `user_id` 接入，控制台成员关系与 
 - [配置参考](./01-configuration.md)
 - [控制台 RBAC](../api/20-console-rbac.md)
 - [存储空间与目录布局](../concepts/09-storage-layout.md)
+
+## 对话行为 Evidence 提取
+
+Skill 挖掘的默认编译 Skill 为 `taikang-dialogue-evidence-s3`，协议 `te-dialogue-evidence.v1`。
+从原始对话或已准备的 `model_cases` 创建一个任务，自动完成准备、单阶段提取和导出。
+默认每个单元处理一个案例，每次 Compile 最多调度 4 个独立单元；超长案例按原文范围分段。
+结果区分有原文依据的场景与条件、推断的适用建议，并保留句级引用。案例数、单元数和批次数分别统计。
+`partial` 表示有失败单元或隔离内容，不能当作完整案例集合。合法零 Evidence 可以完整成功。
+产物包括 manifest、Evidence、全部原始案例、覆盖清单、问题和 Schema，可离线校验后导入其他项目。
+此协议不生成维度、评分或 Skill Candidate。历史任务继续使用冻结协议；显式保存的自定义编译正文保留，恢复默认才切换为 S3。

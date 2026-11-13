@@ -2,11 +2,14 @@
 
 import copy
 import json
+from pathlib import Path
 
 from ... import config
-from ...default_compiler import SHA256
 from ...knowledge_compiler import SKILL_BODY as PREVIOUS_DEFAULT
 from ..input import sha
+
+SHA256 = sha((Path(__file__).parents[2] / "compiler_skills" /
+              "taikang-dialogue-dimensions-s2" / "SKILL.md").read_text(encoding="utf-8"))
 
 MIGRATION = "taikang-dialogue-dimensions-s2-default-v1"
 

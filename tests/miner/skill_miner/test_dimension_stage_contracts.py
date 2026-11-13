@@ -2,11 +2,11 @@ import copy
 
 import pytest
 
-from team_miner.skill_miner.default_compiler import SHA256, SKILL_BODY
 from team_miner.skill_miner.dialogue_dimensions.input import canonical, sha
 from team_miner.skill_miner.dialogue_dimensions.v2.compiler import STAGES, sections, stage_body
 from team_miner.skill_miner.dialogue_dimensions.v2.input_view import DEFAULTS, model_view, packet
 from team_miner.skill_miner.dialogue_dimensions.v2.registry import consume, register
+from team_miner.skill_miner.dialogue_dimensions.v2.resource import SHA256, SKILL_BODY
 from team_miner.skill_miner.dialogue_dimensions.v2.validation import validate
 from team_miner.skill_miner.settings import reset_prompt, settings_payload, update_settings
 from tests.support.dialogue_dimensions_v2 import card, case, dimension, observation, receipt
@@ -33,6 +33,7 @@ def test_malformed_sections_rejected(body):
 
 
 def test_default_reset_and_effective_snapshot_agree():
+    from team_miner.skill_miner.default_compiler import SHA256, SKILL_BODY
     value = {"mining": {"other": "preserved", "s2_migration": "marker"}}
     payload = settings_payload(value)
     assert payload["candidate_mode"] == "none"

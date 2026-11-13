@@ -15,6 +15,12 @@ async def resume(engine, job, body):
         return job
     if job["status"] not in {"interrupted", "stopped", "failed"}:
         raise ValueError("dialogue task is not resumable")
+    if job.get("execution_protocol") == "te-dialogue-evidence.v1":
+        from ..dialogue_evidence.repository import Repository as EvidenceRepository
+        state = await EvidenceRepository(engine, job).get("run")
+        if state and state["stage"] == "finished":
+            raise ValueError("Evidence delivery is final; create a new job for another extraction")
+        return await update(engine, job, status="preparing", ov_cancel_reason="", error="", finished_at="")
     if job.get("execution_protocol") == "te-dialogue-dimensions.v2":
         # S2 has its own journal; never copy v1 analysis into it.
         from .v2.repository import Repository

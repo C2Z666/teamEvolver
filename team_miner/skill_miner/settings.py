@@ -5,10 +5,11 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from .default_compiler import PROTOCOL as S2_PROTOCOL
+from .compiler_protocol import detect
 from .default_compiler import SHA256, SKILL_BODY, VERSION
 from .dialogue_dimensions.input import sha
-from .dialogue_dimensions.v2.compiler import sections
+from .dialogue_dimensions.v2 import PROTOCOL as S2_PROTOCOL
+from .dialogue_evidence import PROTOCOL as EVIDENCE_PROTOCOL
 from .knowledge_compiler_v1 import SKILL_BODY as POINT_V1_SKILL_BODY
 from .knowledge_compiler_v2 import SKILL_BODY as POINT_V2_SKILL_BODY
 from .knowledge_compiler_v3 import SKILL_BODY as POINT_V3_SKILL_BODY
@@ -26,7 +27,7 @@ COMPILER_PROMPT_ID = "ov_compile"
 MAX_COMPILER_BYTES = 256 * 1024
 LEGACY_COMPILER_WARNING = (
     "当前编译 Skill 未声明能力拆分计划契约，新任务仍按单候选编译。"
-    "恢复默认编译 Skill 后，新任务执行优秀对话评分维度分析，不产生 Skill Candidate。"
+    "恢复默认编译 Skill 后，新任务执行行为 Evidence 提取，不产生 Skill Candidate。"
 )
 
 
@@ -59,18 +60,18 @@ def compiler_contract_version(body: str) -> int:
 
 def settings_payload(store_data: dict[str, Any]) -> dict[str, Any]:
     body = compiler_prompt(store_data)
-    from .dialogue_dimensions import PROTOCOL
-    s2 = S2_PROTOCOL in body
-    dialogue = PROTOCOL in body or s2
+    protocol = detect(body)
+    s2 = protocol == S2_PROTOCOL
+    dialogue = bool(protocol)
     contract_version = compiler_contract_version(body)
     warning = LEGACY_COMPILER_WARNING if contract_version == 1 and not dialogue else ""
     return {
         "engine": "ov_compile",
         "candidate_contract_version": contract_version,
         "candidate_mode": "none" if dialogue else "collection" if contract_version == 2 else "single",
-        "execution_protocol": S2_PROTOCOL if s2 else PROTOCOL if dialogue else "",
+        "execution_protocol": protocol,
         "default_version": VERSION, "default_sha256": SHA256, "effective_sha256": sha(body),
-        "migration_status": (store_data.get("mining") or {}).get("s2_migration", "not_migrated"),
+        "migration_status": (store_data.get("mining") or {}).get("s3_migration", "not_migrated"),
         "candidate_mode_warning": warning,
         "options_warnings": [warning] if warning else [],
         "model": {"configuration_source": "openviking_server", "editable_here": False},
@@ -80,7 +81,8 @@ def settings_payload(store_data: dict[str, Any]) -> dict[str, Any]:
             "label": "Skill 挖掘编译",
             "description": (
                 "新任务使用此处保存的编译 Skill，保留自定义内容，不由后端替换。"
-                + ("一次任务自动完成行为提取、共享维度匹配、全量检查和候选评分标准生成。" if s2 else
+                + ("提取行为 Evidence、发生场景和使用条件，导出供后续聚合。" if protocol == EVIDENCE_PROTOCOL else
+                   "一次任务自动完成行为提取、共享维度匹配、全量检查和候选评分标准生成。" if s2 else
                    warning or "按用户方向构建完整方法。")
             ),
             "default_prompt": SKILL_BODY,
@@ -135,8 +137,7 @@ def update_settings(store_data: dict[str, Any], body: dict[str, Any]) -> dict[st
         # Use exactly the validator used when provisioning the immutable OV package.
         from .ov_round_orchestration import _compiler_package
         _compiler_package(prompt)
-        if S2_PROTOCOL in prompt:
-            sections(prompt)
+        detect(prompt)
         if prompt == SKILL_BODY:
             mining["prompts"].pop(COMPILER_PROMPT_ID, None)
         else:

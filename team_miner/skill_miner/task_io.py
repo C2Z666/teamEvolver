@@ -53,6 +53,11 @@ async def accept(request, services, operation, raw, settings, *, job_id=""):
         from .dialogue_dimensions.v2.compiler import sections
         from .settings import compiler_prompt
         compiler = compiler_prompt(settings.config)
+        from .compiler_protocol import detect
+        protocol = detect(compiler)
+        if protocol == "te-dialogue-evidence.v1":
+            from .dialogue_evidence.budget import DEFAULTS as EVIDENCE_DEFAULTS
+            frozen_settings["evidence_options"] = dict(EVIDENCE_DEFAULTS)
         if PROTOCOL in compiler:
             sections(compiler)
             from .dialogue_dimensions.v2.input_view import DEFAULTS

@@ -1,12 +1,12 @@
-"""Production S2 compiler resource; independent of knowledge-point compilers."""
+"""Production S3 compiler resource; independent of knowledge-point compilers."""
 
 from pathlib import Path
 
 from .dialogue_dimensions.input import sha
-from .dialogue_dimensions.v2 import PROTOCOL
-from .dialogue_dimensions.v2.compiler import sections
+from .dialogue_evidence import PROTOCOL
+from .dialogue_evidence.compiler import sections
 
-VERSION = "taikang-dialogue-dimensions-s2"
+VERSION = "taikang-dialogue-evidence-s3"
 SKILL_BODY = (Path(__file__).parent / "compiler_skills" / VERSION / "SKILL.md").read_text(encoding="utf-8")
 SHA256 = sha(SKILL_BODY)
 sections(SKILL_BODY)

@@ -5,9 +5,10 @@ from types import SimpleNamespace
 import pytest
 
 from team_miner.skill_miner import config
-from team_miner.skill_miner.default_compiler import SHA256, SKILL_BODY
+from team_miner.skill_miner.default_compiler import SKILL_BODY
 from team_miner.skill_miner.dialogue_dimensions.v2.migration import migrate
 from team_miner.skill_miner.dialogue_dimensions.v2.repository import Repository, RevisionConflict
+from team_miner.skill_miner.dialogue_dimensions.v2.resource import SHA256
 from team_miner.skill_miner.settings import compiler_prompt
 
 pytestmark = pytest.mark.postgres
@@ -49,12 +50,13 @@ def test_migration_is_transactional_once_only_and_retains_custom_edits(pg_env):
             current = await config.load(services, conn)
             assert compiler_prompt(current.config) == SKILL_BODY
             assert current.config["mining"]["unrelated"] == "keep"
-            current.config["mining"]["prompts"]["ov_compile"] = SKILL_BODY + "\ncustom later edit\n"
+            current.config["mining"]["prompts"]["ov_compile"] = SKILL_BODY.replace(
+                "<!-- s3:common:end -->", "custom later edit\n<!-- s3:common:end -->")
             await config.save(services, conn, current.config, expected_revision=current.revision)
         assert (await migrate(services, "alpha", expected_revision=0))["status"] == "already_applied"
         async with pg_env.tx.tenant_tx("alpha") as conn:
             current = await config.load(services, conn)
-            assert compiler_prompt(current.config).endswith("custom later edit\n")
+            assert "custom later edit" in compiler_prompt(current.config)
         async with pg_env.tx.tenant_tx("beta") as conn:
             assert (await config.load(services, conn)).revision == 0
     pg_env.tx.pool.run(exercise())

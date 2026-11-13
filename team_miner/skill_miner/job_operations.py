@@ -27,13 +27,13 @@ async def create(engine, body, identifier):
     repository = engine.repository
     settings = engine.settings.get("settings", engine.settings.get("config", {}))
     compiler = engine.settings.get("compiler_body_snapshot") or compiler_prompt(settings)
-    from .dialogue_dimensions import PROTOCOL
+    from .compiler_protocol import detect
     from .dialogue_dimensions.v2 import PROTOCOL as S2_PROTOCOL
-    from .dialogue_dimensions.v2.compiler import sections
-    s2 = S2_PROTOCOL in compiler
-    if s2:
-        sections(compiler)
-    dialogue = PROTOCOL in compiler or s2
+    from .dialogue_evidence import PROTOCOL as EVIDENCE_PROTOCOL
+    protocol = detect(compiler)
+    s2 = protocol == S2_PROTOCOL
+    s3 = protocol == EVIDENCE_PROTOCOL
+    dialogue = bool(protocol)
     dialogue_config = None
     # The operation identity, rather than a process-local random value, binds
     # recovery after a lost acknowledgement to the same business job.
@@ -63,7 +63,7 @@ async def create(engine, body, identifier):
         from .dialogue_dimensions.orchestration import frozen_read
         from .dialogue_dimensions.partition import options
         if not source_uri.endswith("/model_cases"):
-            if not s2:
+            if not (s2 or s3):
                 raise ValueError("对话维度 Skill 需要准备后的 model_cases 知识源")
             from .dialogue_dimensions.preparation import execute as prepare_raw
             from .mining_contracts import validate_descendant
@@ -92,10 +92,14 @@ async def create(engine, body, identifier):
         dialogue_config = {"dataset_manifest_ref": manifest_uri,
                            "dataset_manifest_sha256": hashlib.sha256(raw.encode()).hexdigest(),
                            "dialogue_options": options(),
-                           "execution_protocol": S2_PROTOCOL if s2 else PROTOCOL}
+                           "execution_protocol": protocol}
         if s2:
             from .dialogue_dimensions.v2.input_view import DEFAULTS
             dialogue_config["s2_options"] = dict(engine.settings.get("s2_options", DEFAULTS))
+        if s3:
+            from .dialogue_evidence.budget import DEFAULTS as EVIDENCE_DEFAULTS
+            dialogue_config["evidence_options"] = dict(EVIDENCE_DEFAULTS)
+            dialogue_config["output_contract_version"] = "taikang.evidence-delivery.v1"
     source = await engine._ov_source_detail({**record, "uri": source_uri})
     if not source.get("ready"):
         raise ValueError("知识源目录中没有可挖掘文件或目录清单不完整")
@@ -112,6 +116,8 @@ async def create(engine, body, identifier):
         output_root = f"{RUNS_ROOT}/{job_id}/output/analysis/dialogue_dimensions"
         if s2:
             output_root += "_s2"
+        if s3:
+            output_root = f"{RUNS_ROOT}/{job_id}/output/evidence"
         dialogue_config["dialogue_output_root"] = validate_resource_uri(output_root)
     # The very first metadata INSERT includes the frozen accepted configuration.
     # A crash before the file checkpoint can reconstruct the compiler and queue

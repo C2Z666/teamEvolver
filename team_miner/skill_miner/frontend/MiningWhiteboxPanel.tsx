@@ -95,7 +95,8 @@ export default function MiningWhiteboxPanel({ active, user }: { active: boolean;
     }
   }
 
-  const s2 = settings?.execution_protocol === "te-dialogue-dimensions.v2";
+  const s3 = settings?.execution_protocol === "te-dialogue-evidence.v1";
+  const s2 = s3 || settings?.execution_protocol === "te-dialogue-dimensions.v2";
   const disabled = !isAdmin || !settings || saving;
   return (
     <div className="mt-5 space-y-5">
@@ -114,7 +115,8 @@ export default function MiningWhiteboxPanel({ active, user }: { active: boolean;
           <p className="text-xs leading-relaxed text-muted-foreground">
             编译使用 OpenViking 服务端的模型配置。以下默认参数用于新任务，可在创建任务时调整；人工补证等待不计入单轮期限。
           </p>
-          {s2 && <p className="text-xs text-muted-foreground">一次任务自动完成行为提取、共享维度匹配、全量检查和候选评分标准生成。内部最多新增 2 轮、修订 1 轮，不产生 Skill Candidate。</p>}
+          {s3 && <p className="text-xs text-muted-foreground">S3：每单元一个案例，默认每批最多 4 单元；提取行为 Evidence、场景和条件，导出供后续聚合。容量失败有限拆分，partial 表示来源覆盖不完整。</p>}
+          {s2 && !s3 && <p className="text-xs text-muted-foreground">一次任务自动完成行为提取、共享维度匹配、全量检查和候选评分标准生成。内部最多新增 2 轮、修订 1 轮，不产生 Skill Candidate。</p>}
           <div className="grid gap-3.5 md:grid-cols-2">
             {!s2 && <NumberField label="默认挖掘轮数上限" value={settings?.pipeline.max_rounds ?? 3} min={1} max={5}
               disabled={disabled} onChange={(value) => updatePipeline("max_rounds", value)} />}

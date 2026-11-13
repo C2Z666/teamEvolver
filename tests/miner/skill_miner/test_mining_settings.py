@@ -30,8 +30,8 @@ def test_settings_expose_only_effective_compile_controls():
 
 def test_saved_compiler_is_the_body_used_by_future_rounds():
     data = {"mining": {"pipeline": {"max_retries": 9}, "prompts": {"sample_package": "obsolete"}}}
-    custom = SKILL_BODY.replace("<!-- s2:common:end -->",
-                                "Always explain conflicting Evidence.\n<!-- s2:common:end -->")
+    custom = SKILL_BODY.replace("<!-- s3:common:end -->",
+                                "Always explain conflicting Evidence.\n<!-- s3:common:end -->")
     result = update_settings(data, {
         "pipeline": {"max_rounds": 2, "runtime_timeout_seconds": 600},
         "prompts": [{"id": "ov_compile", "prompt": custom}],

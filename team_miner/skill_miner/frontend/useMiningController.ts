@@ -209,11 +209,11 @@ export function useMiningController({
           source_id: selectedSource?.source_id || "",
           input_dir: inputDir,
           max_rounds: rounds,
-          human_checkpoints: config?.execution_protocol === "te-dialogue-dimensions.v2" ? false : humanCheckpoints,
+          human_checkpoints: ["te-dialogue-dimensions.v2", "te-dialogue-evidence.v1"].includes(config?.execution_protocol || "") ? false : humanCheckpoints,
           runtime_timeout_seconds: runtimeTimeout,
-          mining_mode: config?.execution_protocol === "te-dialogue-dimensions.v2" ? "auto" : miningMode,
-          mining_direction: config?.execution_protocol === "te-dialogue-dimensions.v2" ? "" : miningDirection.trim(),
-          target_skill_count: config?.execution_protocol === "te-dialogue-dimensions.v2" ? null
+          mining_mode: ["te-dialogue-dimensions.v2", "te-dialogue-evidence.v1"].includes(config?.execution_protocol || "") ? "auto" : miningMode,
+          mining_direction: ["te-dialogue-dimensions.v2", "te-dialogue-evidence.v1"].includes(config?.execution_protocol || "") ? "" : miningDirection.trim(),
+          target_skill_count: ["te-dialogue-dimensions.v2", "te-dialogue-evidence.v1"].includes(config?.execution_protocol || "") ? null
             : miningMode === "single" ? 1 : miningMode === "target" ? targetSkillCount : null,
         }),
       });

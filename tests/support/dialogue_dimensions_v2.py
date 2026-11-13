@@ -45,9 +45,9 @@ class MemoryRepository:
 
 
 def run_state():
-    from team_miner.skill_miner.default_compiler import SHA256
     from team_miner.skill_miner.dialogue_dimensions.input import case_key
     from team_miner.skill_miner.dialogue_dimensions.v2.input_view import DEFAULTS
+    from team_miner.skill_miner.dialogue_dimensions.v2.resource import SHA256
     raw = case()
     return {"skill_hash": SHA256, "dataset_hash": "frozen", "embedding_model": "model-1", "options": dict(DEFAULTS),
             "stage": "extract", "planned": False, "queue": [], "planned_packets": {}, "active": None,

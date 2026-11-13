@@ -120,6 +120,13 @@ export interface MiningJob {
   execution_protocol?: string;
   dialogue_recovery_epoch?: number;
   dialogue_stage?: string;
+  delivery_status?: string;
+  zero_evidence_case_count?: number;
+  quarantined_evidence_count?: number;
+  failed_unit_count?: number;
+  evidence_unit_count?: number;
+  evidence_accepted_units?: number;
+  evidence_compile_count?: number;
   processed_case_count?: number;
   total_case_count?: number;
   evidence_count?: number;

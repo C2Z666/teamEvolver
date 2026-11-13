@@ -23,6 +23,7 @@ import {
   jobSkillNames, jobStatusMeta, nativeRetryContext, pipelineWarningMessages,
   qualityLabel,
 } from "./miningHelpers";
+import MiningEvidenceResults from "./MiningEvidenceResults";
 import type { MiningJob } from "./types";
 import type { MiningController } from "./useMiningController";
 
@@ -37,7 +38,8 @@ export default function MiningJobDetail({ job, controller }: { job: MiningJob; c
     resumeJob, retryNativeJob, stopJob, uploadCheckpointEvidence,
     submitCheckpointAnswers, previewArtifact, submitJobToEvolution,
   } = controller;
-    const s2 = job.execution_protocol === "te-dialogue-dimensions.v2";
+    const s3 = job.execution_protocol === "te-dialogue-evidence.v1";
+  const s2 = s3 || job.execution_protocol === "te-dialogue-dimensions.v2";
     const durableGaps = job.knowledge_gaps?.questions || [];
     const supplementRounds = job.knowledge_supplements || [];
     const supplementQuestions = job.pending_checkpoint?.questions || durableGaps;
@@ -77,7 +79,15 @@ export default function MiningJobDetail({ job, controller }: { job: MiningJob; c
     const editableArtifacts = job.status === "succeeded" || isWaitingForEvidence(job);
     return (
       <div className="space-y-4 border-t border-accent/20 bg-accent-soft/35 px-5 py-5">
-        {s2 && <div className="rounded border p-3 text-sm space-y-2">
+        {s3 && <div className="rounded border p-3 text-sm space-y-2">
+          <strong>行为 Evidence · {job.dialogue_stage || "prepare"}</strong>
+          <p>完整案例 {job.processed_case_count || 0}/{job.total_case_count || 0} · Evidence {job.evidence_count || 0} · 问题 {job.issue_count || 0}</p>
+          <p>单元 {job.evidence_accepted_units || 0}/{job.evidence_unit_count || 0} · Compile 批次 {job.evidence_compile_count || 0} · 交付 {job.delivery_status || "进行中"}</p>
+          <p>完整零结果案例 {job.zero_evidence_case_count || 0} · 失败单元 {job.failed_unit_count || 0} · 隔离 Evidence {job.quarantined_evidence_count || 0}</p>
+          <p>下方产物包含行为、事实条件、推断建议、句级原文定位和完整导出清单。partial 表示有未完成或隔离内容。</p>
+        </div>}
+        {s3 && <MiningEvidenceResults artifacts={jobArtifacts(job)} />}
+        {s2 && !s3 && <div className="rounded border p-3 text-sm space-y-2">
           <strong>候选评分标准 · {job.dialogue_stage || "prepare"}</strong>
           <p>案例提取 {job.processed_case_count || 0}/{job.total_case_count || 0} · Evidence 归属 {job.assigned_evidence_count || 0}/{job.evidence_count || 0} · 待发现 {job.pending_evidence_count || 0}</p>
           <p>全量检查 {job.audit_completed_count || 0}/{job.audit_planned_count || 0} · 评分口径 {job.rubric_count || 0} · 问题 {job.issue_count || 0} · 目录版本 {job.registry_revision || 0}</p>

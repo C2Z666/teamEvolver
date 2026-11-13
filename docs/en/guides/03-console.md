@@ -175,3 +175,15 @@ Adapters run with the service process's permissions; upload trusted code only. S
 - [Configuration Reference](./01-configuration.md)
 - [Console RBAC](../api/20-console-rbac.md)
 - [Storage Spaces and Layout](../concepts/09-storage-layout.md)
+
+## Dialogue behavior Evidence extraction
+
+The default mining compiler is `taikang-dialogue-evidence-s3`, using `te-dialogue-evidence.v1`.
+One job prepares raw dialogues, extracts behavior Evidence in one business stage, and exports the results.
+Each unit handles one case or a bounded source segment; a Compile schedules at most four independent units by default.
+Results separate source-backed scenarios and conditions from inferred applicability, retaining sentence references.
+Case, unit and Compile counts are distinct. `partial` indicates failed units or quarantined content;
+a complete case may legitimately contain zero Evidence.
+Artifacts include a manifest, Evidence, all raw cases, coverage, issues and schemas for offline import.
+This protocol produces no dimensions, scores or Skill Candidates. Historical jobs retain their frozen protocol.
+Saved custom compiler text remains effective until explicitly reset to the new default.

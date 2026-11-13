@@ -5,12 +5,12 @@ from types import SimpleNamespace
 import pytest
 from starlette.exceptions import HTTPException
 
-from team_miner.skill_miner.default_compiler import SKILL_BODY
 from team_miner.skill_miner.dialogue_dimensions.input import canonical
 from team_miner.skill_miner.dialogue_dimensions.v2 import executor
 from team_miner.skill_miner.dialogue_dimensions.v2.input_view import model_view
 from team_miner.skill_miner.dialogue_dimensions.v2.orchestration import enqueue
 from team_miner.skill_miner.dialogue_dimensions.v2.registry import consume
+from team_miner.skill_miner.dialogue_dimensions.v2.resource import SKILL_BODY
 from tests.support.dialogue_dimensions_v2 import MemoryRepository, case, observation, receipt, run_state
 
 

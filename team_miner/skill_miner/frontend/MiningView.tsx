@@ -47,7 +47,8 @@ export default function MiningView(props: Parameters<typeof useMiningController>
     stateLabel, stateTone, filteredJobs, selectInputDir,
     verifySelectedInputSource, startRun, deleteMiningJob, saveArtifactRevision,
   } = controller;
-  const s2 = config?.execution_protocol === "te-dialogue-dimensions.v2";
+  const s3 = config?.execution_protocol === "te-dialogue-evidence.v1";
+  const s2 = s3 || config?.execution_protocol === "te-dialogue-dimensions.v2";
 
   function handleArtifactLink(href: string): boolean {
     if (!artifactPreview || !selectedJob || href.startsWith("#") || /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(href)) return false;
@@ -82,7 +83,7 @@ export default function MiningView(props: Parameters<typeof useMiningController>
     <div>
       <PageHeader
         title={meta.title}
-        description={s2 && page === "jobs" ? "从原始白名单对话创建任务，自动提取行为、登记共享维度、检查原文并生成候选评分标准。" : meta.description}
+        description={s3 && page === "jobs" ? "提取行为 Evidence、发生场景和使用条件，导出供后续聚合。" : s2 && page === "jobs" ? "从原始白名单对话创建任务，自动提取行为、登记共享维度、检查原文并生成候选评分标准。" : meta.description}
         badge="SkillMiner"
         actions={running && <Pill tone="blue">{jobCounts.running ? `${jobCounts.running} 个运行中` : `${jobCounts.queued} 个排队中`}</Pill>}
       />
@@ -315,7 +316,7 @@ export default function MiningView(props: Parameters<typeof useMiningController>
       <Dialog open={createJobOpen} onOpenChange={(open) => !starting && setCreateJobOpen(open)}>
         <DialogContent className="max-h-[90vh] w-[calc(100vw-32px)] overflow-y-auto !max-w-[1120px]">
           <DialogHeader>
-            <DialogTitle>{s2 ? "新建优秀对话维度任务" : "新建 Skill 挖掘任务"}</DialogTitle>
+            <DialogTitle>{s3 ? "新建行为 Evidence 提取任务" : s2 ? "新建优秀对话维度任务" : "新建 Skill 挖掘任务"}</DialogTitle>
           </DialogHeader>
 
           <div className="grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
@@ -327,7 +328,7 @@ export default function MiningView(props: Parameters<typeof useMiningController>
                   <Input
                     value={taskName}
                     onChange={(event) => setTaskName(event.target.value)}
-                    placeholder={s2 ? "例如：优秀对话评分维度" : "例如：智能客服技能挖掘"}
+                    placeholder={s3 ? "例如：优秀对话行为 Evidence" : s2 ? "例如：优秀对话评分维度" : "例如：智能客服技能挖掘"}
                     maxLength={120}
                     autoFocus
                   />
@@ -375,7 +376,8 @@ export default function MiningView(props: Parameters<typeof useMiningController>
                   来源不足时明确提示实际数量及缺口，等待复核；不会硬凑数量或强行拼接无关方法。
                 </p>}
                 </>}
-                {s2 && <p className="text-xs text-muted-foreground">选择原始白名单对话知识源。一次任务自动完成全部阶段，产出待复核、待校准的评分标准，不创建 Skill Candidate。</p>}
+                {s3 && <p className="text-xs text-muted-foreground">一个任务提取具体做法、来源事实条件和推断适用建议；无评分，不创建 Skill Candidate。</p>}
+                {s2 && !s3 && <p className="text-xs text-muted-foreground">选择原始白名单对话知识源。一次任务自动完成全部阶段，产出待复核、待校准的评分标准，不创建 Skill Candidate。</p>}
 
                 <label className="block">
                   <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">选择知识源</span>
@@ -428,7 +430,7 @@ export default function MiningView(props: Parameters<typeof useMiningController>
                   </div>
                 </label>
 
-                {config?.execution_protocol !== "te-dialogue-dimensions.v2" && <label className="block">
+                {!s2 && <label className="block">
                   <span className="mb-1.5 flex items-center justify-between text-xs font-semibold text-muted-foreground">
                     挖掘轮数上限
                     <span className="text-accent">{rounds}</span>
