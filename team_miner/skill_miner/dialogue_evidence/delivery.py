@@ -79,7 +79,8 @@ def build(job, run, units):
         "截取原文，不合并不连续引文。observed_conditions 为来源事实，suggested_applicability 为推断。"
         "不生成评分或维度。coverage 包含全部案例，partial/failed 不可当完整来源。"
         "Evidence ID 标识本次提取，跨任务用 dataset_hash 和案例身份检查血缘。\n")
-    files["run_metrics.json"] = canonical({**run["metrics"], "budget_profile": run["budget_profile"]})+"\n"
+    files["run_metrics.json"] = canonical({**run["metrics"], "budget_profile": run["budget_profile"],
+                                           "adaptive": run.get("adaptive")})+"\n"
     manifest = {"schema_version": "taikang.evidence-delivery.v1", "delivery_status": status,
         "job_id": job["job_id"], "dataset_hash": run["dataset_hash"], "skill_hash": run["skill_hash"],
         "execution_hash": run["execution_hash"], "renderer_version": 1,

@@ -59,3 +59,34 @@ def test_migration_is_transactional_once_only_and_retains_custom_edits(pg_env):
         async with pg_env.tx.tenant_tx("beta") as conn:
             assert (await config.load(services, conn)).revision == 0
     pg_env.tx.pool.run(exercise())
+
+
+def test_adaptive_policy_and_partial_fallback_survive_pg_restart(pg_env):
+    from team_miner.skill_miner.dialogue_evidence import adaptive
+    from team_miner.skill_miner.dialogue_evidence.budget import DEFAULTS
+    from tests.support.dialogue_evidence import case, receipt, task
+
+    async def exercise():
+        async def guard(conn):
+            pass
+        engine = SimpleNamespace(services=SimpleNamespace(tx=pg_env.tx), tenant="alpha", _guard_connection=guard)
+        job = {"job_id": "adaptive-restart", "runtime_timeout_seconds": 3600}
+        repo = Repository(engine, job)
+        run = {"options": dict(DEFAULTS), "metrics": {}}
+        for i in range(3):
+            adaptive.observe(run, job, task={"status": "completed", "meta": {"pipeline": {
+                "tokens": {"input": 100000, "output": 1000}}}},
+                active={"task_id": str(i), "units": [1, 2, 3, 4]}, seconds=400)
+        packet = task()
+        unit = {"packet": packet, "status": "retry_wait", "attempt": 1,
+                "fallback": {"receipt": receipt(packet), "receipt_hash": "hash",
+                             "task_id": "prior-compile", "uri": "viking://resources/prior/receipt.json"}}
+        await repo.save(run, **{packet["unit_id"]: unit})
+        restarted = Repository(engine, job)
+        restored = await restarted.get("run")
+        assert adaptive.batch_limit(restored, job) == 5
+        assert len(restored["adaptive"]["decisions"]) == 3
+        recovered = await restarted.get(packet["unit_id"])
+        assert recovered["fallback"]["receipt"]["case_ref"] == case()["case_ref"]
+        assert recovered["fallback"]["uri"] == "viking://resources/prior/receipt.json"
+    pg_env.tx.pool.run(exercise())

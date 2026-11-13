@@ -6,7 +6,7 @@ from ..dialogue_dimensions.input import canonical, case_key, sha
 from ..dialogue_dimensions.orchestration import update
 from ..mining_contracts import utc_now
 from ..ov_round_orchestration import _compiler_package
-from . import PROTOCOL, executor
+from . import PROTOCOL, executor, recovery
 from .budget import DEFAULTS, divide, plan
 from .compiler import sections, stage_body
 from .preparation import load_cases
@@ -18,6 +18,9 @@ async def prepare(engine, job, repo):
     cases, issues, dataset_hash = await load_cases(engine, job)
     options = dict(DEFAULTS)
     options.update(job.get("evidence_options", {}))
+    if "evidence_options" in job and "adaptive_batching" not in job["evidence_options"]:
+        # Previously accepted snapshots retain their original fixed-batch/recovery contract.
+        options.update(adaptive_batching=0, field_repair_attempts_per_unit=0)
     run = {"execution_protocol": PROTOCOL, "stage": "extract", "cases": cases, "issues": issues,
            "dataset_hash": dataset_hash, "skill_hash": sha(job["compiler_body_snapshot"]),
            "execution_hash": sha(_compiler_package(stage_body(job["compiler_body_snapshot"], "extract"))[1]),
@@ -26,7 +29,8 @@ async def prepare(engine, job, repo):
            "budget_profile": {"estimator": "unicode-chars-and-utf8-v1", "model": "unknown",
                "context_tokens": "unknown", "max_tokens": "unknown", "account_tpm": "unknown",
                "skill_chars": len(stage_body(job["compiler_body_snapshot"], "extract")),
-               "calibration": "conservative_uncalibrated_no_batch_expansion"},
+               "calibration": "bounded_observed_consumption_v1" if options.get("adaptive_batching")
+               else "conservative_uncalibrated_no_batch_expansion"},
            "metrics": {"compiles": 0, "accepted": 0, "retries": 0, "splits": 0}}
     records = {}
     for case in cases.values():
@@ -42,7 +46,9 @@ async def prepare(engine, job, repo):
         run["unit_count"] += len(units)
     run["max_calls"] = max(1, run["unit_count"]) * (2 ** (options["capacity_split_depth"]+1)-1) * (
         options["repair_attempts_per_unit"]+options["transport_retry_attempts"]+1)
-    run["deadline_seconds"] = job["runtime_timeout_seconds"] * max(1, len(cases))
+    deadline = job["runtime_timeout_seconds"] * max(1, len(cases))
+    run["deadline_seconds"] = (min(deadline, options["job_deadline_seconds"])
+                               if options.get("adaptive_batching") else deadline)
     await repo.save(run, **records)
     return run
 
@@ -106,8 +112,12 @@ async def tick(engine, job, action="poll"):
     if job.get("ov_cancel_reason") or exhausted:
         for unit in units:
             if unit["status"] not in {"accepted", "failed", "superseded"}:
-                unit.update(status="failed", error="cancelled" if job.get("ov_cancel_reason") else "deadline_exceeded")
-                await repo.save(run, **{unit["packet"]["unit_id"]: unit})
+                unit["error"] = "cancelled" if job.get("ov_cancel_reason") else "deadline_exceeded"
+                if unit.get("fallback"):
+                    await recovery.accept(repo, run, unit, unit["fallback"], consume, job["job_id"])
+                else:
+                    unit["status"] = "failed"
+                    await repo.save(run, **{unit["packet"]["unit_id"]: unit})
         run["queue"] = []
     from .delivery import coverage, finish
     covered = coverage(run, units)

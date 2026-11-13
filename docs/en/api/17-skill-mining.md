@@ -1,8 +1,32 @@
 # Skill Mining API
 
-## Excellent dialogue dimensions
+## Behavior Evidence extraction
 
-The default compiler is `taikang-dialogue-dimensions-s2`, using `te-dialogue-dimensions.v2`.
+The default compiler is `taikang-dialogue-evidence-s3`, using `te-dialogue-evidence.v1`.
+`POST /api/mining/jobs` prepares sources, plans units, extracts behaviors, validates receipts and exports delivery in the same Worker task, without dimensions or scores.
+Input is a registered whitelist `model_cases` source. Sources, Skill text, configuration revision and runtime options are frozen at acceptance.
+
+New jobs start with four units per Compile, capped at six, with one Compile in flight.
+After three clean batches, the limit grows by one only when projections from actual tokens and elapsed time remain within budget.
+The limit halves, down to one, when pipeline tokens exceed 300,000, submission-to-receipt time exceeds 900 seconds, or units remain unaccepted or quarantined.
+Missing token usage disables growth. Cached tokens are already included in input and are not added again.
+Packet limits remain 12,000 characters / 48,000 bytes and total batch input remains 32,000 characters, regardless of unit count.
+
+Observed duration may increase the next Compile timeout but never reduce its accepted value: the default starts at 3,600 seconds and caps at 7,200 seconds, preserving explicitly longer accepted values.
+The new policy caps the job deadline at 48 hours, also respecting the existing case-count deadline.
+Receipt repair is limited to two attempts, including at most one field repair. A usable receipt is checkpointed before field repair; exhaustion may deliver partial results without claiming completeness.
+Rate limiting uses its separate five-attempt transport budget and bounded backoff. Accepted units are not re-extracted. Legacy frozen options keep fixed batches and do not enable field repair.
+
+A trigger describes the start of the whole method; its references cannot follow the first action. Intermediate responses may support conditions or the process description.
+Field isolation retains specific reasons. Recovery clears the current error and preserves the previous attempt error separately.
+Output under the job's `dialogue_output_root` includes original cases, Evidence, coverage, issues, schemas, manifest and run_metrics.
+`run_metrics.json` includes consumption and adaptive decisions. PG checkpoints the same state, so Worker restarts preserve batch history.
+One business stage may still involve multiple internal OV model calls. Token figures use the pipeline scope and are not total account consumption.
+
+
+## Historical S2 excellent dialogue dimensions
+
+Historical jobs frozen with `taikang-dialogue-dimensions-s2` keep `te-dialogue-dimensions.v2`.
 One `POST /api/mining/jobs` drives extraction, shared-dimension matching, centralized registration, exhaustive source audit, bounded revision and candidate rubrics. It creates no Skill Candidate or Test Dataset.
 Valid custom compiler text is frozen unchanged; existing v1 jobs retain their protocol routing.
 

@@ -7,8 +7,12 @@ from . import PROTOCOL
 DEFAULTS = {
     "packets_per_compile": 4, "packet_input_chars": 12000, "packet_input_bytes": 48000,
     "compile_input_chars": 32000, "max_inflight_compiles": 1,
-    "repair_attempts_per_unit": 1, "transport_retry_attempts": 5,
+    "repair_attempts_per_unit": 2, "transport_retry_attempts": 5,
     "transport_retry_delay_seconds": 60, "capacity_split_depth": 3,
+    "field_repair_attempts_per_unit": 1, "adaptive_batching": 1, "adaptive_batch_max": 6,
+    "adaptive_clean_compiles": 3, "compile_token_soft_limit": 300000,
+    "compile_wall_soft_limit_seconds": 900, "compile_timeout_max_seconds": 7200,
+    "job_deadline_seconds": 172800,
 }
 
 

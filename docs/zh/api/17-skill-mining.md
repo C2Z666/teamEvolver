@@ -1,8 +1,32 @@
 # Skill 挖掘 API
 
-## 优秀对话维度提取
+## 行为 Evidence 提取
 
-网页默认编译 Skill 为 `taikang-dialogue-dimensions-s2`，协议为 `te-dialogue-dimensions.v2`。
+默认编译 Skill 为 `taikang-dialogue-evidence-s3`，协议 `te-dialogue-evidence.v1`。
+`POST /api/mining/jobs` 在同一 Worker 任务内完成原文准备、单元规划、行为提取、校验与导出，不生成维度或评分。
+输入为已登记的白名单 `model_cases`；原文、Skill 正文、配置 revision 和运行选项在受理时冻结。
+
+新任务从每 Compile 4 个单元起步，最多 6 个，始终只有 1 个在途 Compile。
+连续 3 批稳定且实际 token/耗时外推仍有余量时，仅增加 1 个单元。
+单批 pipeline 总 token 超过 300,000、受理至回执消费耗时超过 900 秒、或出现未验收/隔离单元时，单元上限减半，最低 1 个。
+token 不可用时不扩批；缓存 token 已包含在 input 中，不重复相加。
+单包 12,000 字符/48,000 字节、批次合计 32,000 字符的输入上限保持不变，不随单元数增加。
+
+实际耗时可提高后续 Compile 超时但不会降低已受理值；默认起始 3,600 秒，上限 7,200 秒（显式更长的受理值保留）。
+新策略的 job 总期限不超过 48 小时，仍受按案例数计算的既有期限约束。
+回执修复最多 2 次，其中字段修复最多 1 次；字段修复前保存可用回执，修复耗尽仍可按 partial 交付，不伪造完整成功。
+限流使用独立的 5 次传输重试和有界退避，成功单元不重复提取。历史冻结选项未启用自适应时继续固定批次，不自动增加字段修复。
+
+trigger 只描述整条方法起始的触发，引用不得晚于首动作；方法内部的中间回应可作为条件或过程依据。
+隔离字段保留具体原因，恢复成功后终态错误清空，历史错误另行保存。
+交付在任务的 `dialogue_output_root` 下，包含原始案例、Evidence、覆盖、问题、Schema、manifest 和 run_metrics。
+`run_metrics.json` 包含实际消耗与自适应决策；PG 保存相同恢复状态，Worker 重启不重置扩批历史。
+一个业务阶段仍可能包含 OV 内部多次模型调用；上述 token 是 pipeline 口径，不代表账户总调用消耗。
+
+
+## 历史 S2 优秀对话维度提取
+
+冻结编译 Skill 为 `taikang-dialogue-dimensions-s2` 的历史任务继续使用 `te-dialogue-dimensions.v2`。
 一次 `POST /api/mining/jobs` 自动执行行为提取、共享维度匹配、集中登记、全量原文检查、有限修订和候选评分标准生成，不产生 Skill Candidate 或 Test Dataset。
 已保存的合法自定义正文原样冻结；旧 v1 任务保留原协议路由。
 

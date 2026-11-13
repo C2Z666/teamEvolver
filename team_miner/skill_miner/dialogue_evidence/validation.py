@@ -77,9 +77,10 @@ def validate(text, task):
         for key in ("scenario", "trigger"):
             try:
                 row[key] = fact(row.get(key, EMPTY), order[actions[0]] if key == "trigger" else None)
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as exc:
                 row[key] = dict(EMPTY)
-                isolated.append({"local_ref": local, "reason": "isolated_field", "field": key})
+                isolated.append({"local_ref": local, "reason": "isolated_field", "field": key,
+                                 "detail": str(exc)[:1000], "raw": raw.get(key)})
         for key, schema in (("observed_conditions", Fact), ("suggested_applicability", Inference),
                             ("uncertainties", Uncertainty)):
             good = []

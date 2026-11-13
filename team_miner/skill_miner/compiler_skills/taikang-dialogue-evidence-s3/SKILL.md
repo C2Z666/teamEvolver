@@ -67,7 +67,7 @@ files[].inputs 使用 assignment 顶层 inputs[].id，覆盖当前文件全部 r
 
 紧密依赖、共同完成一个沟通处理的动作作为一条 Evidence；能分别处理不同问题的做法分开。问候、说明共同介绍人、承接其评价共同构成开场方法时，不机械拆成多条。不能把整场面谈压成一条笼统摘要。
 
-当前案例连续重复、没有新增信息的行为可合并并保留必要引用；不同触发情境下的独立使用分别保留。不比较其他案例，不把姓名、数字或产品名的替换当成新的方法。
+只保留该具体方法需要的动作引用：独立约访的方法不因前面有一句问候就把问候纳入首动作。对客户原话的简单复述或生活化附和，没有新增处理信息时不单独成条。当前案例连续重复、没有新增信息的行为可合并并保留必要引用；不同触发情境下的独立使用分别保留。不比较其他案例，不把姓名、数字或产品名的替换当成新的方法。
 
 payload.scope.owned_sentence_ids 是当前责任范围，context_sentence_ids 仅为上下文。action_refs 按原文顺序去重，首个动作句必须属于 owned；其余引用可来自当前可见上下文。不为只有 context 内动作的行为重复出条目。跨界方法未展示完整步骤时，仅描述可确认部分并标 boundary_context_limited，不补造后文。
 
@@ -77,7 +77,7 @@ payload.scope.owned_sentence_ids 是当前责任范围，context_sentence_ids �
 - behavior：原文中实际发生的具体做法，保留必要顺序与对象，不写成维度或已证实效果。
 - action_refs：至少一个实际 HWP 句子 ID，按原文顺序，不引用客户句冒充动作。
 - scenario：当前相关背景、交流阶段和议题，格式为 Fact。
-- trigger：直接触发该做法的表达或状态，格式为 Fact；不能把之后的客户回应倒作前因。
+- trigger：直接触发整条做法开始的表达或状态，格式为 Fact。sentence_refs 只能引用最早 action_refs 之前或同一句；不能把之后的客户回应倒作前因。连续多步方法中的中间客户回应，可写入 observed_conditions 并在 behavior 中说明先后，不放入整条方法的 trigger。开场没有可确认的前置触发时留空，不用后续客户确认补齐。
 - observed_conditions：原文或元数据明确支持的条件，Fact 数组，无则 []。
 - suggested_applicability：根据具体做法推导的使用条件，格式为 Inference 数组，可为空；它始终是推断，不是本案例已确认事实。
 - response_refs：实际客户回应的句子 ID 数组，无则 []；不要求正面回应。
@@ -85,7 +85,7 @@ payload.scope.owned_sentence_ids 是当前责任范围，context_sentence_ids �
 
 Fact 为 `{text, sentence_refs, metadata_refs}`。非空 text 至少有一项来源；metadata_refs 仅使用 task 已提供的 course/chapter/knowledge_point/scene 字段名。没有依据时用 `{text:"", sentence_refs:[], metadata_refs:[]}`；conditions 数组不放空 Fact。来源里的“场景三”不能证明你自行推断的情境。
 
-Inference 为 `{text, basis_refs}`，说明推导的适用条件及当前句子依据；不扩写通用风险清单或强行补齐条件。销售声称由熟人介绍，可记录为“销售说明由熟人介绍”，不要改写为“介绍关系已经核实”。
+Inference 为 `{text, basis_refs}`，说明推导的适用条件及当前句子依据；不扩写通用风险清单或强行补齐条件。销售声称由熟人介绍，可记录为“销售说明由熟人介绍”，不要改写为“介绍关系已经核实”。客户背景若仅由销售转述，应保留“销售称/提及”的归属；常在小区看到客户不证明销售也住该小区，称呼客户不等于完成身份确认。suggested_applicability 不得抹去客户已表达的电话沟通、改天或预算限制，不因案例整体优秀就将每次持续推进写成通用建议。
 
 ### 完成与不确定
 
@@ -95,5 +95,5 @@ Inference 为 `{text, basis_refs}`，说明推导的适用条件及当前句子�
 
 确实无法在容量内完成：status=needs_split，result.evidence=[]，empty_reason 说明容量原因，issues 至少一项 reason=input_capacity 或 output_capacity；这不是成功零结果，不提交截断的部分业务文件。缺失原文、身份不一致等问题用 issues 明确说明，不伪造完成。
 
-提交前检查：引用属于当前案例与可见范围；行为有 HWP 来源；首个动作在 owned 内；事实与推断分开；完整 JSON 符合宿主 Schema。完成后不再扫描或继续规划。
+提交前检查：引用属于当前案例与可见范围；行为有 HWP 来源；首个动作在 owned 内；事实与推断分开；完整 JSON 符合宿主 Schema。trigger 中每个句子 ID 都不晚于首动作，若不满足则重新选择有依据的前置引用或留空；不要改写原文或交换句子 ID。JSON 内的引号和换行使用标准 JSON 序列化，文件内容必须能被完整解析，不输出 Markdown 代码围栏。完成后不再扫描或继续规划。
 <!-- s3:stage:extract:end -->

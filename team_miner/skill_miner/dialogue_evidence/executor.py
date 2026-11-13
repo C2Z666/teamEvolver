@@ -10,6 +10,7 @@ from ..dialogue_dimensions.orchestration import update
 from ..dialogue_dimensions.transport import descendant, read, write
 from ..mining_contracts import RUNS_ROOT, utc_now
 from ..ov_round_orchestration import _compiler_package
+from . import adaptive, recovery
 from .compiler import stage_body
 from .validation import validate
 
@@ -46,7 +47,7 @@ async def step(engine, job, repo, run, consume):
             if unit["status"] in {"accepted", "failed", "deferred", "superseded"}:
                 continue
             size = len(canonical(unit["packet"]))
-            if units and (len(units) >= run["options"]["packets_per_compile"] or
+            if units and (len(units) >= adaptive.batch_limit(run, job) or
                           total + size > run["options"]["compile_input_chars"] or
                           unit["packet"]["stage"] != units[0]["packet"]["stage"]):
                 break
@@ -90,16 +91,6 @@ async def step(engine, job, repo, run, consume):
         run["active"] = active
         await repo.save(run, **{u["packet"]["unit_id"]: u for u in units})
     if not active.get("task_id"):
-        if active.get("transport_attempt", 0) > run["options"]["transport_retry_attempts"]:
-            for identifier in active["units"]:
-                unit = await repo.get(identifier)
-                unit.update(status="failed", error="submission_status_unknown")
-                run["issues"].append({"unit_id": identifier, "reason": "submission_status_unknown"})
-                await repo.save(run, **{identifier: unit})
-            await engine.admission.release(key=active["key"])
-            run["active"] = None
-            await repo.save(run)
-            return
         if not await engine.admission.acquire(job, {"key": active["key"]}):
             return
         await update(engine, job, status="preparing", submission_idempotency_key=active["key"],
@@ -110,6 +101,20 @@ async def step(engine, job, repo, run, consume):
         except HTTPException as exc:
             if exc.status_code != 404:
                 raise
+            # Even at the retry limit, reconcile a possibly accepted submission first.
+            if active.get("transport_attempt", 0) > run["options"]["transport_retry_attempts"]:
+                for identifier in active["units"]:
+                    unit = await repo.get(identifier)
+                    if unit.get("fallback"):
+                        await recovery.accept(repo, run, unit, unit["fallback"], consume, job["job_id"])
+                    else:
+                        unit.update(status="failed", error="submission_status_unknown")
+                        run["issues"].append({"unit_id": identifier, "reason": "submission_status_unknown"})
+                        await repo.save(run, **{identifier: unit})
+                await engine.admission.release(key=active["key"])
+                run["active"] = None
+                await repo.save(run)
+                return
             try:
                 accepted = await engine._knowledge_request(job["account"], "POST", "/api/v1/compile", timeout=60,
                     extra_headers={"Idempotency-Key": active["key"]}, json=active["request"])
@@ -127,6 +132,10 @@ async def step(engine, job, repo, run, consume):
                 await engine.admission.release(key=active["key"])
                 for identifier in active["units"]:
                     unit = await repo.get(identifier)
+                    if unit.get("fallback"):
+                        unit["error"] = "compile_request_rejected"
+                        await recovery.accept(repo, run, unit, unit["fallback"], consume, job["job_id"])
+                        continue
                     unit.update(status="failed", error="compile_request_rejected")
                     run["issues"].append({"unit_id": identifier, "reason": unit["error"],
                                           "http_status": rejection.status_code})
@@ -148,7 +157,9 @@ async def step(engine, job, repo, run, consume):
         raise ValueError("foreign_remote_task")
     status = str(task.get("status", "")).lower()
     if status not in TERMINAL_NATIVE_STATES:
-        if ((cancelling or elapsed(active["submitted_at"]) > job["runtime_timeout_seconds"])
+        deadline = run.get("deadline_seconds")
+        exhausted = deadline is not None and elapsed(run["started_at"]) > deadline
+        if ((cancelling or exhausted or elapsed(active["submitted_at"]) > adaptive.timeout_seconds(run, job))
                 and not active.get("cancel")):
             await engine._knowledge_request(job["account"], "POST",
                 "/api/v1/tasks/" + active["task_id"] + "/cancel", timeout=10)
@@ -174,7 +185,8 @@ async def step(engine, job, repo, run, consume):
     for identifier in active["units"]:
         unit = await repo.get(identifier)
         if unit["status"] == "accepted":
-            text = await read(engine, job, descendant(active["request"]["to"], unit["packet"]["output_path"]))
+            text = await read(engine, job, unit.get("receipt_uri") or descendant(
+                active["request"]["to"], unit["packet"]["output_path"]))
             if sha(text) != unit["receipt_hash"]:
                 conflict = {"unit_id": identifier, "reason": "receipt_conflict", "receipt_hash": sha(text),
                             "accepted_receipt_hash": unit["receipt_hash"]}
@@ -183,6 +195,10 @@ async def step(engine, job, repo, run, consume):
                     await repo.save(run)
             continue
         if unit["status"] == "superseded":
+            continue
+        if unit.get("processed_task_id") == active["task_id"]:
+            # A later child read may fail after this unit's retry decision committed.
+            # Replaying the same Compile must not consume another repair attempt.
             continue
         original = await read(engine, job, active["request"]["from"][0] + "/" + identifier + ".md")
         if original != canonical(unit["packet"]):
@@ -193,7 +209,8 @@ async def step(engine, job, repo, run, consume):
         except (ValueError, HTTPException) as exc:
             if isinstance(exc, HTTPException) and exc.status_code != 404:
                 raise
-            unit.update(error=str(exc)[:1000], status="retry_wait", failure_kind="receipt")
+            unit.update(error=str(exc)[:1000], status="retry_wait", failure_kind="receipt",
+                        processed_task_id=active["task_id"])
             if rate_limited and isinstance(exc, HTTPException) and exc.status_code == 404:
                 unit["failure_kind"] = "transport"
                 attempts = unit.get("transport_attempt", 0)
@@ -213,22 +230,32 @@ async def step(engine, job, repo, run, consume):
                                           "attempt": attempts + 1, "delay_seconds": delay})
                 unit["error"] = failure_text[:1000]
             elif capacity_failure or str(exc) == "capacity_exceeded":
+                if unit.get("fallback"):
+                    await recovery.accept(repo, run, unit, unit["fallback"], consume, job["job_id"])
+                    continue
                 from .orchestration import split_unit
                 await split_unit(repo, run, unit)
                 continue
             elif unit["attempt"] >= run["options"]["repair_attempts_per_unit"]:
+                if unit.get("fallback"):
+                    await recovery.accept(repo, run, unit, unit["fallback"], consume, job["job_id"])
+                    continue
                 unit["status"] = "failed"
                 run["issues"].append({"unit_id": identifier, "reason": "receipt_failed", "detail": unit["error"]})
             else:
                 unit["attempt"] += 1
                 run["metrics"]["retries"] += 1
+            if unit["status"] == "deferred" and unit.get("fallback"):
+                await recovery.accept(repo, run, unit, unit["fallback"], consume, job["job_id"])
+                continue
             await repo.save(run, **{identifier: unit})
             continue
-        # No await between semantic changes and saving: both are one fenced CAS transaction.
-        consume(run, unit, receipt, sha(text), job["job_id"])
-        unit.update(status="accepted", receipt=receipt, receipt_hash=sha(text), remote_task_id=active["task_id"])
-        run["metrics"]["accepted"] += 1
-        await repo.save(run, **{identifier: unit})
+        await recovery.handle_receipt(repo, run, unit, receipt, text, active,
+            descendant(active["request"]["to"], unit["packet"]["output_path"]), consume, job["job_id"])
+    current_units = [await repo.get(identifier) for identifier in active["units"]]
+    unhealthy = any(u["status"] not in {"accepted"} or u.get("receipt", {}).get("quarantined")
+                    for u in current_units)
+    adaptive.observe(run, job, task=task, active=active, seconds=elapsed(active["submitted_at"]), unhealthy=unhealthy)
     run["metrics"].setdefault("compile_wall_seconds", []).append({
         "request_key": active["key"], "task_id": active["task_id"],
         "seconds": elapsed(active["submitted_at"]), "status": status})
