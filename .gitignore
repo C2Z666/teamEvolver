@@ -32,4 +32,5 @@ __pycache__/
 !/my-doc/泰康-对话打分优化/develop/**/
 !/my-doc/泰康-对话打分优化/develop/**/*.md
 /my-doc/泰康-对话打分优化/develop/data-prepare/
-my-doc/泰康-对话打分优化/develop/展示界面/README.md
+/my-doc/泰康-对话打分优化/develop/S2/展示界面/
+/exports/
