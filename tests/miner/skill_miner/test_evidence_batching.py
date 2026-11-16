@@ -14,12 +14,15 @@ from tests.support.dialogue_evidence import CompileMemoryHost, case
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("vectors_only", [False, True])
 @pytest.mark.parametrize("chars,soft,expected", [
     (100, 8000, 3), (3000, 8000, 2), (8200, 8000, 1), (3000, 0, 3),
 ])
-async def test_batches_bound_combined_input_without_truncation(monkeypatch, chars, soft, expected):
+async def test_batches_bound_combined_input_without_truncation(monkeypatch, chars, soft, expected, vectors_only):
     host, repo = CompileMemoryHost(), MemoryRepository()
     options = {**DEFAULTS, "compile_input_soft_chars": soft}
+    if not vectors_only:
+        options.pop("output_vectors_only")  # Restored historical checkpoint.
     units = [plan(case("HWP：" + "问" * chars + "\nC：可以。"), options, i)[0] for i in range(1, 5)]
     originals = {u["packet"]["unit_id"]: canonical(u["packet"]) for u in units}
     run = {"queue": list(originals), "active": None, "options": options, "skill_hash": SHA256,
@@ -34,6 +37,7 @@ async def test_batches_bound_combined_input_without_truncation(monkeypatch, char
            "runtime_timeout_seconds": 3600}
     await executor.step(engine, job, repo, run, None)
     active = (await repo.get("run"))["active"]
+    assert active["request"].get("output_processing_mode") == ("vectors_only" if vectors_only else None)
     assert len(active["units"]) == expected
     assert active["input_chars"] == sum(len(originals[k]) for k in active["units"])
     for key in active["units"]:

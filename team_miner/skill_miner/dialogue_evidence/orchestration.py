@@ -23,6 +23,7 @@ async def prepare(engine, job, repo):
         options["adaptive_policy_version"] = job["evidence_options"].get("adaptive_policy_version", 1)
         options["field_patch_repair"] = job["evidence_options"].get("field_patch_repair", 0)
         options["compile_input_soft_chars"] = job["evidence_options"].get("compile_input_soft_chars", 0)
+        options["output_vectors_only"] = job["evidence_options"].get("output_vectors_only", 0)
     if "repair" not in sections(job["compiler_body_snapshot"])[1]:
         options["field_patch_repair"] = 0
     if "evidence_options" in job and "adaptive_batching" not in job["evidence_options"]:

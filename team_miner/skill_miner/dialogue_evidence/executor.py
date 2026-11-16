@@ -88,6 +88,9 @@ async def step(engine, job, repo, run, consume):
         if run["options"].get("adaptive_policy_version", 1) >= 2:
             key = "te-s3-" + sha(canonical([key, mode, sha(published),
                 [patches.request(u)["repair_hash"] for u in units] if mode == "field_patch" else []]))
+        vectors_only = bool(run["options"].get("output_vectors_only", 0))
+        if vectors_only:
+            key = "te-s3-" + sha(canonical([key, "output_vectors_only"]))
         root = f"{RUNS_ROOT}/{job['job_id']}/s3/{key}"
         for unit in units:
             unit["stage_hash"] = sha(published)
@@ -120,6 +123,8 @@ async def step(engine, job, repo, run, consume):
                   "preparation_seconds": elapsed(preparation_started),
                   "request": {"from": [root + "-input"], "to": root, "skill": "viking://agent/skills/" + name,
                               "instruction": instruction}}
+        if vectors_only:
+            active["request"]["output_processing_mode"] = "vectors_only"
         run["active"] = active
         await repo.save(run, **{u["packet"]["unit_id"]: u for u in units})
     if not active.get("task_id"):
