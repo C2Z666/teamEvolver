@@ -6,16 +6,19 @@ The default compiler is `taikang-dialogue-evidence-s3`, using `te-dialogue-evide
 `POST /api/mining/jobs` prepares sources, plans units, extracts behaviors, validates receipts and exports delivery in the same Worker task, without dimensions or scores.
 Input is a registered whitelist `model_cases` source. Sources, Skill text, configuration revision and runtime options are frozen at acceptance.
 
-New jobs start with four units per Compile, capped at six, with one Compile in flight.
-After three clean batches, the limit grows by one only when projections from actual tokens and elapsed time remain within budget.
-The limit halves, down to one, when pipeline tokens exceed 300,000, submission-to-receipt time exceeds 900 seconds, or units remain unaccepted or quarantined.
-Missing token usage disables growth. Cached tokens are already included in input and are not added again.
+New jobs start with two units per Compile, capped at four, with one Compile in flight.
+After three completed full batches at the same size, with observed tokens and duration both at or below 75% of their soft budgets, the limit increases by one as a bounded probe. Whole single-unit latency is not multiplied by the proposed batch size.
+The limit halves, down to one, on pipeline tokens above 300,000, submission-to-receipt duration above 900 seconds, rate limiting, capacity errors or timeout cancellation.
+Field isolation and ordinary receipt defects do not shrink the global batch. Repair batches cannot justify extraction growth. Missing usage blocks growth; cached tokens are not counted twice.
 Packet limits remain 12,000 characters / 48,000 bytes and total batch input remains 32,000 characters, regardless of unit count.
 
 For newly accepted S3 jobs, `runtime_timeout_seconds` is the whole-job deadline, defaulting to and capped at 259,200 seconds (72 hours). It is not multiplied by case count.
 Each Compile has a separate timeout, starting at 3,600 seconds and increasing with observed duration up to 7,200 seconds; the whole-job deadline takes precedence.
 Omitting the creation parameter uses the tenant's saved default. Historical jobs retain their frozen budgets and timeout semantics.
 Receipt repair is limited to two attempts, including at most one field repair. A usable receipt is checkpointed before field repair; exhaustion may deliver partial results without claiming completeness.
+When the frozen Skill includes a repair contract, isolated scenario, trigger and response_refs support targeted field patches. Only affected Evidence and source context are submitted; the host permits assigned field changes only and fully revalidates the merged receipt. Patches bind the original receipt hash; invalid output retains the usable original. Ordinary extraction is prioritized and repairs use separate batches under the same input budgets. Other isolation retains the existing bounded receipt repair.
+Delivery includes the patch Schema and field_repairs.jsonl lineage. run_metrics records growth blockers, resource pressure, input preparation, acceptance, observed remote stages and receipt consumption. Unobserved OV internal stages are not assigned inferred durations.
+Older jobs retain their frozen policy version and repair behavior.
 Rate limiting uses its separate five-attempt transport budget and bounded backoff. Accepted units are not re-extracted. Legacy frozen options keep fixed batches and do not enable field repair.
 
 A trigger describes the start of the whole method; its references cannot follow the first action. Intermediate responses may support conditions or the process description.

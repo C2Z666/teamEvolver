@@ -1,4 +1,4 @@
-"""Submit the registered 171-case S3 source once through the authenticated local API."""
+"""Submit a registered S3 source once through the authenticated local API."""
 
 from __future__ import annotations
 
@@ -21,7 +21,12 @@ def main():
     parser.add_argument("--api", default="http://127.0.0.1:52010")
     parser.add_argument("--tenant", default="default")
     parser.add_argument("--idempotency-key", default=IDEMPOTENCY_KEY)
+    parser.add_argument("--source-id", default=SOURCE_ID)
+    parser.add_argument("--input-dir", default=INPUT_DIR)
+    parser.add_argument("--name", default="泰康 S3 行为 Evidence 171 条全量 · 稳健自适应")
     args = parser.parse_args()
+    if (args.source_id != SOURCE_ID or args.input_dir != INPUT_DIR) and args.idempotency_key == IDEMPOTENCY_KEY:
+        parser.error("A different dataset requires its own explicit idempotency key.")
     if urlparse(args.api).hostname not in {"127.0.0.1", "localhost", "::1"}:
         parser.error("This operator script only sends service credentials to the local API.")
     root_key = os.environ.get("TEAMEVOLVER_ROOT_API_KEY")
@@ -35,8 +40,7 @@ def main():
             parser.error("The selected tenant must use the S3 Evidence compiler.")
         if settings.json().get("effective_sha256") != SHA256:
             parser.error("The API compiler does not match this checkout; load the verified implementation first.")
-        body = {"name": "泰康 S3 行为 Evidence 171 条全量 · 稳健自适应",
-                "source_id": SOURCE_ID, "input_dir": INPUT_DIR, "max_rounds": 1}
+        body = {"name": args.name, "source_id": args.source_id, "input_dir": args.input_dir, "max_rounds": 1}
         accepted = client.post("/api/mining/jobs", json=body,
                                headers={"Idempotency-Key": args.idempotency_key})
         accepted.raise_for_status()

@@ -81,6 +81,11 @@ def build(job, run, units):
         "Evidence ID 标识本次提取，跨任务用 dataset_hash 和案例身份检查血缘。\n")
     files["run_metrics.json"] = canonical({**run["metrics"], "budget_profile": run["budget_profile"],
                                            "adaptive": run.get("adaptive")})+"\n"
+    if run.get("repair_execution_hash"):
+        from .patches import FieldPatch
+        files["schemas/field_patch.json"] = canonical(FieldPatch.model_json_schema()) + "\n"
+        files["field_repairs.jsonl"] = "".join(canonical({"unit_id": u["packet"]["unit_id"],
+            **u["repair_provenance"]}) + "\n" for u in units if u.get("repair_provenance"))
     manifest = {"schema_version": "taikang.evidence-delivery.v1", "delivery_status": status,
         "job_id": job["job_id"], "dataset_hash": run["dataset_hash"], "skill_hash": run["skill_hash"],
         "execution_hash": run["execution_hash"], "renderer_version": 1,

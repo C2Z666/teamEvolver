@@ -18,6 +18,12 @@ async def prepare(engine, job, repo):
     cases, issues, dataset_hash = await load_cases(engine, job)
     options = dict(DEFAULTS)
     options.update(job.get("evidence_options", {}))
+    if "evidence_options" in job:
+        # Never apply a newly introduced policy to a previously accepted job.
+        options["adaptive_policy_version"] = job["evidence_options"].get("adaptive_policy_version", 1)
+        options["field_patch_repair"] = job["evidence_options"].get("field_patch_repair", 0)
+    if "repair" not in sections(job["compiler_body_snapshot"])[1]:
+        options["field_patch_repair"] = 0
     if "evidence_options" in job and "adaptive_batching" not in job["evidence_options"]:
         # Previously accepted snapshots retain their original fixed-batch/recovery contract.
         options.update(adaptive_batching=0, field_repair_attempts_per_unit=0)
@@ -33,9 +39,13 @@ async def prepare(engine, job, repo):
            "budget_profile": {"estimator": "unicode-chars-and-utf8-v1", "model": "unknown",
                "context_tokens": "unknown", "max_tokens": "unknown", "account_tpm": "unknown",
                "skill_chars": len(stage_body(job["compiler_body_snapshot"], "extract")),
-               "calibration": "bounded_observed_consumption_v1" if options.get("adaptive_batching")
+               "calibration": ("bounded_same_batch_probe_v2" if options.get("adaptive_policy_version") == 2
+                               else "bounded_observed_consumption_v1") if options.get("adaptive_batching")
                else "conservative_uncalibrated_no_batch_expansion"},
            "metrics": {"compiles": 0, "accepted": 0, "retries": 0, "splits": 0}}
+    if options.get("field_patch_repair"):
+        from .compiler import repair_body
+        run["repair_execution_hash"] = sha(_compiler_package(repair_body(job["compiler_body_snapshot"]))[1])
     records = {}
     for case in cases.values():
         units = plan(case, options, run["unit_count"]+1)

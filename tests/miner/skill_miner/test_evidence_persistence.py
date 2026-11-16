@@ -76,7 +76,7 @@ def test_adaptive_policy_and_partial_fallback_survive_pg_restart(pg_env):
         for i in range(3):
             adaptive.observe(run, job, task={"status": "completed", "meta": {"pipeline": {
                 "tokens": {"input": 100000, "output": 1000}}}},
-                active={"task_id": str(i), "units": [1, 2, 3, 4]}, seconds=400)
+                active={"task_id": str(i), "units": list(range(adaptive.batch_limit(run, job)))}, seconds=400)
         packet = task()
         unit = {"packet": packet, "status": "retry_wait", "attempt": 1,
                 "fallback": {"receipt": receipt(packet), "receipt_hash": "hash",
@@ -84,7 +84,7 @@ def test_adaptive_policy_and_partial_fallback_survive_pg_restart(pg_env):
         await repo.save(run, **{packet["unit_id"]: unit})
         restarted = Repository(engine, job)
         restored = await restarted.get("run")
-        assert adaptive.batch_limit(restored, job) == 5
+        assert adaptive.batch_limit(restored, job) == 3
         assert len(restored["adaptive"]["decisions"]) == 3
         recovered = await restarted.get(packet["unit_id"])
         assert recovered["fallback"]["receipt"]["case_ref"] == case()["case_ref"]

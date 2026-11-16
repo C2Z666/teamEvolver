@@ -13,13 +13,16 @@ from tests.support.dialogue_evidence import CompileMemoryHost
 
 
 @pytest.mark.asyncio
-async def test_171_cases_finish_after_restart_malformed_output_and_field_repair(monkeypatch):
+@pytest.mark.parametrize("patch_valid", [True, False])
+async def test_171_cases_finish_after_restart_malformed_output_and_field_repair(monkeypatch, patch_valid):
     cases = {}
     for i in range(171):
         source = normalize_case({"case_ref": "case_" + f"{i:024x}",
             "dialogue_text": f"HWP：先确认交流条件{i}。\nC：可以。\nHWP：我们约十分钟。"})
         cases[case_key(source)] = source
     repo, host = MemoryRepository(), CompileMemoryHost()
+    host.lose_resolved_response = patch_valid
+    host.invalid_patch = not patch_valid
 
     async def load(*args):
         return cases, [], "synthetic-dataset"
@@ -47,21 +50,31 @@ async def test_171_cases_finish_after_restart_malformed_output_and_field_repair(
             restarts += 1
         if job.get("dialogue_stage") == "finished":
             break
-    assert job["status"] == "succeeded" and restarts == 3
-    assert job["processed_case_count"] == job["evidence_accepted_units"] == 171
+    assert job["status"] == ("succeeded" if patch_valid else "interrupted")
+    assert restarts == (4 if patch_valid else 3)
+    assert job["evidence_accepted_units"] == 171
+    assert job["processed_case_count"] == (171 if patch_valid else 170)
     run = await repo.get("run")
     assert len(run["evidence"]) == run["metrics"]["accepted"] == 171
     assert run["metrics"]["retries"] == 2 and run["metrics"]["field_repairs"] == 1
     assert all(count == (2 if unit in {"unit-000013", "unit-000027"} else 1)
                for unit, count in host.calls.items())
     assert (await repo.get("unit-000013"))["error"] == ""
-    assert (await repo.get("unit-000027"))["receipt"]["quarantined"] == []
-    assert 1 <= run["adaptive"]["batch_limit"] <= 6
+    assert bool((await repo.get("unit-000027"))["receipt"]["quarantined"]) == (not patch_valid)
+    assert 1 <= run["adaptive"]["batch_limit"] <= 4
     assert any(d["reason"] == "grow_one" for d in run["adaptive"]["decisions"])
-    assert any(d["reason"] == "backoff" for d in run["adaptive"]["decisions"])
+    assert not any(d["reason"] == "backoff" for d in run["adaptive"]["decisions"])
+    assert host.submission_modes[-1] == "field_patch"
+    if patch_valid:
+        assert run["metrics"]["field_patch_successes"] == 1
+        assert (await repo.get("unit-000027"))["repair_provenance"]["merged_uri"].endswith("unit-000027.json")
+    else:
+        assert run["metrics"]["field_patch_fallbacks"] == 1
+        assert not (await repo.get("unit-000027")).get("repair_provenance")
     import json
     manifest = json.loads(host.artifacts["manifest.json"])
-    assert manifest["delivery_status"] == "complete" and manifest["case_count"] == 171
+    assert manifest["delivery_status"] == ("complete" if patch_valid else "partial")
+    assert manifest["case_count"] == 171
     assert len(host.artifacts["cases-0001.jsonl"].splitlines()) == 171
 
 

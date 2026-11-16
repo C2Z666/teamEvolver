@@ -20,14 +20,17 @@ def sections(body):
                                                   for k in ("name", "description")):
         raise ValueError("invalid_s3_frontmatter")
     found = re.findall(r"<!-- s3:([^>]+):(start|end) -->", body)
-    if found != [(name, edge) for name in SECTIONS for edge in ("start", "end")]:
+    expected = [(name, edge) for name in SECTIONS for edge in ("start", "end")]
+    optional = [("repair", edge) for edge in ("start", "end")]
+    if found not in (expected, expected + optional):
         raise ValueError("S3 Skill 分段缺失、重复或顺序错误")
     outside = re.sub(r"<!-- s3:([^>]+):start -->.*?<!-- s3:\1:end -->", "", body[len(front[0]):], flags=re.S)
     # A document title is presentation only. Unclassified custom instructions must never disappear.
     if any(line.strip() and not line.startswith("# ") for line in outside.splitlines()):
         raise ValueError("S3 自定义规则必须放在 common、transport 或对应 stage 分段内")
+    names = (*SECTIONS, *(("repair",) if found == expected + optional else ()))
     return front[0], {name: body.split(f"<!-- s3:{name}:start -->", 1)[1].split(
-        f"<!-- s3:{name}:end -->", 1)[0] for name in SECTIONS}
+        f"<!-- s3:{name}:end -->", 1)[0] for name in names}
 
 
 def stage_body(body, stage):
@@ -42,3 +45,16 @@ def stage_body(body, stage):
     front = re.sub(r"(?m)^name:.*$", f"name: dialogue-s3-{stage}-{suffix}", front)
     return (front + "\n" + "\n".join(parts[name] for name in SECTIONS)
             + "\n## Required receipt schema\n" + schema)
+
+
+def repair_body(body):
+    """Only the frozen patch contract, without full extraction instructions."""
+    from ..dialogue_dimensions.input import canonical
+    from .patches import FieldPatch
+    front, parts = sections(body)
+    if "repair" not in parts:
+        raise ValueError("frozen_skill_has_no_patch_contract")
+    schema = canonical(FieldPatch.model_json_schema())
+    suffix = sha(body + "field_patch" + schema)[:20]
+    front = re.sub(r"(?m)^name:.*$", f"name: dialogue-s3-repair-{suffix}", front)
+    return front + "\n" + parts["repair"] + "\n## Required patch schema\n" + schema

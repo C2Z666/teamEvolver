@@ -17,7 +17,8 @@ from tests.support.dialogue_evidence import case, receipt
 
 
 def sample():
-    run = {"options": dict(DEFAULTS), "metrics": {"accepted": 0, "retries": 0},
+    options = {**DEFAULTS, "adaptive_policy_version": 1, "packets_per_compile": 4, "adaptive_batch_max": 6}
+    run = {"options": options, "metrics": {"accepted": 0, "retries": 0},
            "evidence": {}, "issues": [], "dataset_hash": "frozen", "skill_hash": SHA256}
     return run, {"job_id": "job", "runtime_timeout_seconds": 3600}
 

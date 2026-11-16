@@ -35,12 +35,18 @@ class CompileMemoryHost:
         self.calls = {}
         self.lost_responses = set()
         self.artifacts = {}
+        self.lose_resolved_response = False
+        self.invalid_patch = False
+        self.submission_modes = []
 
     async def noop(self, *args, **kwargs):
         return True
 
     async def write(self, engine, job, uri, text):
         self.files[uri] = text
+        if self.lose_resolved_response and "-resolved/" in uri:
+            self.lose_resolved_response = False
+            raise ConnectionError("synthetic lost merged-receipt write acknowledgement")
 
     async def read(self, engine, job, uri):
         from starlette.exceptions import HTTPException
@@ -82,6 +88,7 @@ class CompileMemoryHost:
             request = kwargs["json"]
             packets = [json.loads(text) for uri, text in sorted(self.files.items())
                        if uri.startswith(request["from"][0] + "/")]
+            self.submission_modes.append(packets[0].get("mode", "extract"))
             for packet in packets:
                 identifier = packet["unit_id"]
                 self.calls[identifier] = self.calls.get(identifier, 0) + 1
@@ -89,6 +96,14 @@ class CompileMemoryHost:
                 if identifier == "unit-000027" and self.calls[identifier] == 1:
                     value["result"]["evidence"][0]["trigger"] = {
                         "text": "synthetic late trigger", "sentence_refs": ["s000002"], "metadata_refs": []}
+                if packet.get("mode") == "field_patch":
+                    value = {"schema_version": "taikang.evidence-field-patch.v1",
+                        **{k: packet[k] for k in ("unit_id", "stage", "input_hash", "case_ref", "case_version",
+                                                 "base_receipt_hash", "repair_hash")},
+                        "patches": [{**t, "value": {"text": "", "sentence_refs": [], "metadata_refs": []}}
+                                    for t in packet["targets"]]}
+                if packet.get("mode") == "field_patch" and self.invalid_patch:
+                    value["input_hash"] = "foreign"
                 self.files[request["to"] + "/" + packet["output_path"]] = (
                     '{"truncated"' if identifier == "unit-000013" and self.calls[identifier] == 1
                     else canonical(value))

@@ -14,7 +14,7 @@ from tests.support.dialogue_evidence import case, evidence, receipt, task
 
 def test_default_and_executable_contract():
     assert detect(SKILL_BODY) == PROTOCOL == "te-dialogue-evidence.v1"
-    assert list(sections(SKILL_BODY)[1]) == ["common", "transport", "stage:extract"]
+    assert list(sections(SKILL_BODY)[1]) == ["common", "transport", "stage:extract", "repair"]
     body = stage_body(SKILL_BODY, "extract")
     assert 'taikang.evidence-result.v1' in body and 'needs_pipeline=true' in body
     assert 'registry_revision' not in body

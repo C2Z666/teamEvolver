@@ -1,6 +1,7 @@
 """Bounded field repair with a durable usable receipt for partial fallback."""
 
 from ..dialogue_dimensions.input import sha
+from . import patches
 
 
 async def accept(repo, run, unit, candidate, consume, job_id):
@@ -19,6 +20,8 @@ async def accept(repo, run, unit, candidate, consume, job_id):
 async def handle_receipt(repo, run, unit, receipt, text, active, uri, consume, job_id):
     unit["processed_task_id"] = active["task_id"]
     candidate = {"receipt": receipt, "receipt_hash": sha(text), "task_id": active["task_id"], "uri": uri}
+    if run["options"].get("field_patch_repair"):
+        candidate["raw_text"] = text
     fallback = unit.get("fallback")
     if receipt["quarantined"]:
         if fallback is None or len(receipt["quarantined"]) < len(fallback["receipt"]["quarantined"]):
@@ -26,6 +29,8 @@ async def handle_receipt(repo, run, unit, receipt, text, active, uri, consume, j
         can_repair = (unit.get("field_repairs", 0) < run["options"].get("field_repair_attempts_per_unit", 0)
                       and unit["attempt"] < run["options"]["repair_attempts_per_unit"])
         if can_repair:
+            unit["repair_mode"] = ("field_patch" if run["options"].get("field_patch_repair")
+                                   and patches.can_patch(unit["fallback"]) else "extract")
             unit["field_repairs"] = unit.get("field_repairs", 0) + 1
             unit["attempt"] += 1
             errors = [{k: issue.get(k) for k in ("local_ref", "field", "reason", "detail")}
