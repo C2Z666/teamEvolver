@@ -96,6 +96,7 @@ async def test_old_accepted_options_do_not_enable_new_policy(monkeypatch):
     job = {"compiler_body_snapshot": SKILL_BODY, "evidence_options": old_options,
            "runtime_timeout_seconds": 3600}
     run = await orchestration.prepare(None, job, repo)
+    assert not run["options"]["compile_input_soft_chars"]
     assert not run["options"]["adaptive_batching"]
     assert not run["options"]["field_repair_attempts_per_unit"]
     assert run["options"]["repair_attempts_per_unit"] == 1

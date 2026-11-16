@@ -5,8 +5,9 @@ from ..dialogue_dimensions.v2.input_view import model_view
 from . import PROTOCOL
 
 DEFAULTS = {
-    "packets_per_compile": 2, "packet_input_chars": 12000, "packet_input_bytes": 48000,
+    "packets_per_compile": 3, "packet_input_chars": 12000, "packet_input_bytes": 48000,
     "compile_input_chars": 32000, "max_inflight_compiles": 1,
+    "compile_input_soft_chars": 9000,
     "repair_attempts_per_unit": 2, "transport_retry_attempts": 5,
     "transport_retry_delay_seconds": 60, "capacity_split_depth": 3,
     "field_repair_attempts_per_unit": 1, "adaptive_batching": 1, "adaptive_batch_max": 4,
@@ -16,6 +17,17 @@ DEFAULTS = {
     "job_deadline_seconds": 259200, "runtime_timeout_is_job_deadline": 1,
     "compile_initial_timeout_seconds": 3600,
 }
+
+
+def batch_input_limit(options, mode):
+    """Keep long inputs in smaller batches without splitting a valid single unit.
+
+    Missing soft limits preserve frozen historical jobs. Repair payloads retain
+    their existing independently bounded contract.
+    """
+    hard = options["compile_input_chars"]
+    soft = options.get("compile_input_soft_chars", 0) if mode == "extract" else 0
+    return min(hard, soft) if soft > 0 else hard
 
 
 def packet(case, owned, ordinal, *, index=1, count=1, adjacent_turns=True):

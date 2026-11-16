@@ -97,7 +97,7 @@ def test_repairs_cannot_grow_normal_batch_and_limits_still_back_off():
     run = {"options": dict(DEFAULTS)}
     for i in range(4):
         probe(run, i, mode="field_patch")
-    assert run["adaptive"]["batch_limit"] == 2
+    assert run["adaptive"]["batch_limit"] == DEFAULTS["packets_per_compile"]
     probe(run, 4, tokens=400000)
     assert run["adaptive"]["batch_limit"] == 1
     assert "token_limit" in run["adaptive"]["decisions"][-1]["pressure_reasons"]
@@ -107,5 +107,5 @@ def test_growth_reports_actual_headroom_blocker():
     run = {"options": dict(DEFAULTS)}
     for i in range(5):
         probe(run, i, seconds=700)
-    assert run["adaptive"]["batch_limit"] == 2
+    assert run["adaptive"]["batch_limit"] == DEFAULTS["packets_per_compile"]
     assert "wall_headroom" in run["adaptive"]["decisions"][-1]["growth_blocked_by"]

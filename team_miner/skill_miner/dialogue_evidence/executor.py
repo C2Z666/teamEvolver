@@ -11,7 +11,9 @@ from ..dialogue_dimensions.transport import descendant, read, write
 from ..mining_contracts import RUNS_ROOT, utc_now
 from ..ov_round_orchestration import _compiler_package
 from . import adaptive, patches, recovery
+from .budget import batch_input_limit
 from .compiler import repair_body, stage_body
+from .timing import commit_timings
 from .validation import validate
 
 TRANSPORT_INSTRUCTION = (
@@ -62,7 +64,7 @@ async def step(engine, job, repo, run, consume):
                 await recovery.accept(repo, run, unit, unit["fallback"], consume, job["job_id"])
                 continue
             if units and (len(units) >= adaptive.batch_limit(run, job) or
-                          total + len(encoded) > run["options"]["compile_input_chars"]):
+                          total + len(encoded) > batch_input_limit(run["options"], unit_mode)):
                 break
             mode = unit_mode
             units.append(unit)
@@ -113,6 +115,8 @@ async def step(engine, job, repo, run, consume):
         if repairs:
             instruction += "\nRepair failed assignments, preserving frozen identity: " + canonical(repairs)
         active = {"key": key, "units": [u["packet"]["unit_id"] for u in units], "submitted_at": utc_now(), "mode": mode,
+                  "input_chars": total, "batch_limit": adaptive.batch_limit(run, job),
+                  "input_soft_limit": batch_input_limit(run["options"], mode),
                   "preparation_seconds": elapsed(preparation_started),
                   "request": {"from": [root + "-input"], "to": root, "skill": "viking://agent/skills/" + name,
                               "instruction": instruction}}
@@ -184,6 +188,10 @@ async def step(engine, job, repo, run, consume):
     if task.get("task_id", active["task_id"]) != active["task_id"]:
         raise ValueError("foreign_remote_task")
     status = str(task.get("status", "")).lower()
+    timings = commit_timings(task)
+    if timings and timings != active.get("commit_timings"):
+        active["commit_timings"] = timings
+        await repo.save(run)
     stage = task.get("stage") or status
     observations = active.setdefault("stage_observations", [])
     if not observations or observations[-1]["stage"] != stage:
@@ -327,6 +335,9 @@ async def step(engine, job, repo, run, consume):
         "receipts_completed_at": utc_now(), "preparation_seconds": active.get("preparation_seconds"),
         "terminal_to_receipt_seconds": elapsed(active["remote_terminal_at"]),
         "stage_observations": active.get("stage_observations", []),
+        "input_chars": active.get("input_chars"), "batch_limit": active.get("batch_limit"),
+        "input_soft_limit": active.get("input_soft_limit"),
+        "commit_timings": active.get("commit_timings", {}),
         "pipeline_reported_milliseconds": (task.get("meta") or {}).get("pipeline", {}).get("total_milliseconds")})
     tokens = (task.get("meta") or {}).get("pipeline", {}).get("tokens")
     if isinstance(tokens, dict):
