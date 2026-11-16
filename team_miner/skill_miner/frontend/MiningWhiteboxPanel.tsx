@@ -113,14 +113,14 @@ export default function MiningWhiteboxPanel({ active, user }: { active: boolean;
       }>
         <div className="space-y-4 p-4">
           <p className="text-xs leading-relaxed text-muted-foreground">
-            编译使用 OpenViking 服务端的模型配置。以下默认参数用于新任务，可在创建任务时调整；人工补证等待不计入单轮期限。
+            编译使用 OpenViking 服务端的模型配置。以下默认参数用于新任务，可在创建任务时调整；未设置时默认 72 小时，最大可设 72 小时。
           </p>
-          {s3 && <p className="text-xs text-muted-foreground">S3：每单元一个案例，默认每批最多 4 单元；提取行为 Evidence、场景和条件，导出供后续聚合。容量失败有限拆分，partial 表示来源覆盖不完整。</p>}
+          {s3 && <p className="text-xs text-muted-foreground">S3：运行期限约束整个任务，单批 Compile 另有超时保护。每单元一个案例，默认每批最多 4 单元；提取行为 Evidence、场景和条件，导出供后续聚合。容量失败有限拆分，partial 表示来源覆盖不完整。</p>}
           {s2 && !s3 && <p className="text-xs text-muted-foreground">一次任务自动完成行为提取、共享维度匹配、全量检查和候选评分标准生成。内部最多新增 2 轮、修订 1 轮，不产生 Skill Candidate。</p>}
           <div className="grid gap-3.5 md:grid-cols-2">
             {!s2 && <NumberField label="默认挖掘轮数上限" value={settings?.pipeline.max_rounds ?? 3} min={1} max={5}
               disabled={disabled} onChange={(value) => updatePipeline("max_rounds", value)} />}
-            <NumberField label="默认单轮运行期限（秒）" value={settings?.pipeline.runtime_timeout_seconds ?? 3600} min={60} max={86400}
+            <NumberField label={s3 ? "默认任务总运行期限（秒）" : "默认单轮运行期限（秒）"} value={settings?.pipeline.runtime_timeout_seconds ?? 259200} min={60} max={259200}
               disabled={disabled} onChange={(value) => updatePipeline("runtime_timeout_seconds", value)} />
           </div>
         </div>

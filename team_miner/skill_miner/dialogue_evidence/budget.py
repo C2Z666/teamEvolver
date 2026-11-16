@@ -12,7 +12,8 @@ DEFAULTS = {
     "field_repair_attempts_per_unit": 1, "adaptive_batching": 1, "adaptive_batch_max": 6,
     "adaptive_clean_compiles": 3, "compile_token_soft_limit": 300000,
     "compile_wall_soft_limit_seconds": 900, "compile_timeout_max_seconds": 7200,
-    "job_deadline_seconds": 172800,
+    "job_deadline_seconds": 259200, "runtime_timeout_is_job_deadline": 1,
+    "compile_initial_timeout_seconds": 3600,
 }
 
 

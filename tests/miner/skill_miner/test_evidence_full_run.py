@@ -86,3 +86,39 @@ async def test_old_accepted_options_do_not_enable_new_policy(monkeypatch):
     assert not run["options"]["adaptive_batching"]
     assert not run["options"]["field_repair_attempts_per_unit"]
     assert run["options"]["repair_attempts_per_unit"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("seconds,count,legacy,expected", [
+    (259200, 1, False, 259200),
+    (259200, 171, False, 259200),
+    (86400, 171, False, 86400),
+    (86400, 171, True, 172800),
+])
+async def test_whole_job_timeout_uses_frozen_budget_without_case_multiplier(
+        monkeypatch, seconds, count, legacy, expected):
+    from team_miner.skill_miner.dialogue_evidence import adaptive
+    cases = {}
+    for i in range(count):
+        source = normalize_case({"case_ref": "case_" + f"{i:024x}", "dialogue_text": "HWP：方便约十分钟吗？"})
+        cases[case_key(source)] = source
+
+    async def load(*args):
+        return cases, [], "frozen-dataset"
+
+    monkeypatch.setattr(orchestration, "load_cases", load)
+    options = dict(DEFAULTS)
+    if legacy:
+        options.pop("runtime_timeout_is_job_deadline")
+        options.pop("compile_initial_timeout_seconds")
+        options["job_deadline_seconds"] = 172800
+    job = {"compiler_body_snapshot": SKILL_BODY, "evidence_options": options,
+           "runtime_timeout_seconds": seconds}
+    repo = MemoryRepository()
+    run = await orchestration.prepare(None, job, repo)
+    assert run["deadline_seconds"] == expected
+    assert adaptive.timeout_seconds(run, job) == (seconds if legacy else 3600)
+    # Restoring the checkpoint must preserve the accepted policy.
+    restored = await repo.get("run")
+    assert restored["deadline_seconds"] == expected
+    assert adaptive.timeout_seconds(restored, job) == (seconds if legacy else 3600)

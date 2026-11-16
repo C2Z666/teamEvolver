@@ -151,3 +151,29 @@ async def test_exhausted_repair_salvages_original_partial_receipt_and_replays_it
     await repo.save(run)
     await executor.step(engine, job, repo, run, consume)
     assert fallback_uri in reads and run["metrics"]["accepted"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("age,cancelled", [(259199, False), (259201, True)])
+async def test_whole_job_deadline_cancels_even_a_recent_compile(monkeypatch, age, cancelled):
+    run = {"options": dict(DEFAULTS), "deadline_seconds": 259200, "started_at": "job-start",
+           "active": {"task_id": "remote", "key": "key", "units": ["unit-000001"],
+                      "submitted_at": "compile-start"}}
+    job = {"job_id": "job", "account": "test", "runtime_timeout_seconds": 259200}
+    repo, cancels = MemoryRepository(), []
+
+    async def request(account, method, path, **kwargs):
+        if method == "POST":
+            cancels.append(path)
+        return {"task_id": "remote", "status": "running"}
+
+    async def update(engine, job, **fields):
+        job.update(fields)
+        return job
+
+    monkeypatch.setattr(executor, "elapsed", lambda value: age if value == "job-start" else 30)
+    monkeypatch.setattr(executor, "update", update)
+    await executor.step(SimpleNamespace(_knowledge_request=request), job, repo, run, consume)
+    assert bool(cancels) == cancelled
+    if cancelled:
+        assert cancels == ["/api/v1/tasks/remote/cancel"]

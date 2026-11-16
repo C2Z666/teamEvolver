@@ -218,7 +218,7 @@ class RepositoryCoreMixin:
         output_uri: str,
         document_count: int,
         max_rounds: int,
-        runtime_timeout_seconds: int = 3600,
+        runtime_timeout_seconds: int = 259200,
         human_checkpoints: bool = True,
         skip_empty_checkpoints: bool = False,
         consolidate_reviewed_candidates: bool = False,

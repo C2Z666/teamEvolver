@@ -127,3 +127,11 @@ async def test_valid_repair_replaces_fallback_without_leaking_old_isolation():
     assert unit["receipt_hash"] == sha(good)
     assert "fallback" not in unit and not run["issues"]
     assert run["metrics"]["accepted"] == len(run["evidence"]) == 1
+
+
+def test_three_day_job_budget_does_not_inflate_single_compile_timeout():
+    run, job = sample()
+    job["runtime_timeout_seconds"] = 259200
+    assert adaptive.timeout_seconds(run, job) == 3600
+    completed(run, job, 1, seconds=2500)
+    assert adaptive.timeout_seconds(run, job) == 7200

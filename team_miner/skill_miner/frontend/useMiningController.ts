@@ -34,7 +34,7 @@ export function useMiningController({
   const { config } = mining;
 
   const [rounds, setRounds] = useState(3);
-  const [runtimeTimeout, setRuntimeTimeout] = useState(3600);
+  const [runtimeTimeout, setRuntimeTimeout] = useState(259200);
   const [humanCheckpoints, setHumanCheckpoints] = useState(true);
   const [taskName, setTaskName] = useState("");
   const [miningMode, setMiningMode] = useState<"auto" | "single" | "target">("auto");
@@ -85,7 +85,7 @@ export function useMiningController({
     if (!config) return;
     if ((!defaultsInitialized.current || !createJobOpen) && config.max_rounds_default) {
       setRounds(config.max_rounds_default);
-      setRuntimeTimeout(config.runtime_timeout_seconds_default || 3600);
+      setRuntimeTimeout(config.runtime_timeout_seconds_default || 259200);
       defaultsInitialized.current = true;
     }
     const next = preferredInputDir && config.input_dirs.includes(preferredInputDir)

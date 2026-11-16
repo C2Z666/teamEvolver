@@ -21,6 +21,10 @@ async def prepare(engine, job, repo):
     if "evidence_options" in job and "adaptive_batching" not in job["evidence_options"]:
         # Previously accepted snapshots retain their original fixed-batch/recovery contract.
         options.update(adaptive_batching=0, field_repair_attempts_per_unit=0)
+    if not job.get("evidence_options", DEFAULTS).get("runtime_timeout_is_job_deadline"):
+        # A frozen older acceptance keeps its original total/Compile timeout semantics.
+        options.pop("runtime_timeout_is_job_deadline", None)
+        options.pop("compile_initial_timeout_seconds", None)
     run = {"execution_protocol": PROTOCOL, "stage": "extract", "cases": cases, "issues": issues,
            "dataset_hash": dataset_hash, "skill_hash": sha(job["compiler_body_snapshot"]),
            "execution_hash": sha(_compiler_package(stage_body(job["compiler_body_snapshot"], "extract"))[1]),
@@ -46,9 +50,10 @@ async def prepare(engine, job, repo):
         run["unit_count"] += len(units)
     run["max_calls"] = max(1, run["unit_count"]) * (2 ** (options["capacity_split_depth"]+1)-1) * (
         options["repair_attempts_per_unit"]+options["transport_retry_attempts"]+1)
-    deadline = job["runtime_timeout_seconds"] * max(1, len(cases))
+    total_timeout = bool(options.get("runtime_timeout_is_job_deadline"))
+    deadline = job["runtime_timeout_seconds"] * (1 if total_timeout else max(1, len(cases)))
     run["deadline_seconds"] = (min(deadline, options["job_deadline_seconds"])
-                               if options.get("adaptive_batching") else deadline)
+                               if total_timeout or options.get("adaptive_batching") else deadline)
     await repo.save(run, **records)
     return run
 

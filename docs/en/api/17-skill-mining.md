@@ -12,8 +12,9 @@ The limit halves, down to one, when pipeline tokens exceed 300,000, submission-t
 Missing token usage disables growth. Cached tokens are already included in input and are not added again.
 Packet limits remain 12,000 characters / 48,000 bytes and total batch input remains 32,000 characters, regardless of unit count.
 
-Observed duration may increase the next Compile timeout but never reduce its accepted value: the default starts at 3,600 seconds and caps at 7,200 seconds, preserving explicitly longer accepted values.
-The new policy caps the job deadline at 48 hours, also respecting the existing case-count deadline.
+For newly accepted S3 jobs, `runtime_timeout_seconds` is the whole-job deadline, defaulting to and capped at 259,200 seconds (72 hours). It is not multiplied by case count.
+Each Compile has a separate timeout, starting at 3,600 seconds and increasing with observed duration up to 7,200 seconds; the whole-job deadline takes precedence.
+Omitting the creation parameter uses the tenant's saved default. Historical jobs retain their frozen budgets and timeout semantics.
 Receipt repair is limited to two attempts, including at most one field repair. A usable receipt is checkpointed before field repair; exhaustion may deliver partial results without claiming completeness.
 Rate limiting uses its separate five-attempt transport budget and bounded backoff. Accepted units are not re-extracted. Legacy frozen options keep fixed batches and do not enable field repair.
 
@@ -118,7 +119,7 @@ The main fields of `POST /api/mining/jobs` follow. Round and Skill count control
 | `mining_mode` | string | `auto` discovery (default), `single` one complete Skill, or `target` requested count |
 | `mining_direction` | string | Up to 4000 characters; optional in auto/target, required complete-method goal in single |
 | `target_skill_count` | integer/null | Required integer 1–100 in target, fixed to 1 in single, null or omitted in auto |
-| `runtime_timeout_seconds` | integer | Round execution budget, 60–86400 seconds (up to 24 hours), default3600; editable in web settings or at job creation; not an ETA |
+| `runtime_timeout_seconds` | integer | Execution budget (whole job for S3, per round for historical workflows), 60–259200 seconds (up to 72 hours), default259200 (72 hours); editable in web settings or at job creation; not an ETA |
 
 Whole-round jobs use `execution_protocol: "te-native-mining.v1"`: one normal Compile per round, full initial construction, then incremental updates of the same `stable_output_uri` using current supplements, implicated originals and changed revision context. `max_rounds` is an upper bound; an empty question list finishes mining without an empty extra round.
 

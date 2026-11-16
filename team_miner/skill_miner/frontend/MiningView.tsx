@@ -447,12 +447,12 @@ export default function MiningView(props: Parameters<typeof useMiningController>
                 </label>}
 
                 <label className="block text-xs text-muted-foreground">
-                  单轮运行期限（秒，最高 24 小时）
+                  {s3 ? "任务总运行期限（秒，最高 72 小时）" : "单轮运行期限（秒，最高 72 小时）"}
                   <input type="number" min={config?.runtime_timeout_seconds_range?.[0] ?? 60}
-                    max={config?.runtime_timeout_seconds_range?.[1] ?? 86400} value={runtimeTimeout} disabled={starting}
+                    max={config?.runtime_timeout_seconds_range?.[1] ?? 259200} value={runtimeTimeout} disabled={starting}
                     onChange={(event) => setRuntimeTimeout(Number(event.target.value))}
                     className="ml-3 rounded border border-border bg-background px-2 py-1" />
-                  <span className="mt-1 block text-[11px]">每轮从远端受理后独立计时，包含远端排队；人工补证等待不计时。运行期限用于保护预算，不代表预计完成时间。到期请求取消并等待远端确认。</span>
+                  <span className="mt-1 block text-[11px]">{s3 ? "从任务执行开始累计计时，覆盖所有批次与重试。" : "每轮从远端受理后独立计时，包含远端排队；人工补证等待不计时。"}运行期限用于保护预算，不代表预计完成时间。到期请求取消并等待远端确认。</span>
                 </label>
 
                 {!s2 && <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-background p-3.5 transition-colors hover:border-accent/50">

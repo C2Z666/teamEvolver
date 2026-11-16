@@ -200,11 +200,11 @@ def test_options_truthful_and_timeout_range(tmp_path):
         source_snapshot_uri="viking://resources/snapshot", output_uri="viking://resources/output",
         document_count=1, max_rounds=3,
     )
-    for timeout in (59, 86401):
+    for timeout in (59, 259201):
         with pytest.raises(ValueError):
             r.create_job(**fields, runtime_timeout_seconds=timeout)
-    accepted = r.create_job(**fields, runtime_timeout_seconds=86400)
-    assert accepted["runtime_timeout_seconds"] == 86400
+    accepted = r.create_job(**fields, runtime_timeout_seconds=259200)
+    assert accepted["runtime_timeout_seconds"] == 259200
 
 
 def test_missing_reports_cannot_be_success(tmp_path):

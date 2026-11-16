@@ -3,13 +3,19 @@
 import math
 
 
+def initial_timeout_seconds(run, job):
+    if run["options"].get("runtime_timeout_is_job_deadline"):
+        return run["options"]["compile_initial_timeout_seconds"]
+    return job["runtime_timeout_seconds"]
+
+
 def policy(run, job):
     options = run["options"]
     if not options.get("adaptive_batching", 0):
         return None
     return run.setdefault("adaptive", {
         "batch_limit": options["packets_per_compile"], "clean_streak": 0, "recent": [],
-        "timeout_seconds": job["runtime_timeout_seconds"], "decisions": [],
+        "timeout_seconds": initial_timeout_seconds(run, job), "decisions": [],
     })
 
 
@@ -20,7 +26,7 @@ def batch_limit(run, job):
 
 def timeout_seconds(run, job):
     current = policy(run, job)
-    return current["timeout_seconds"] if current else job["runtime_timeout_seconds"]
+    return current["timeout_seconds"] if current else initial_timeout_seconds(run, job)
 
 
 def token_total(task):
@@ -76,7 +82,7 @@ def observe(run, job, *, task, active, seconds, unhealthy=False):
         current["recent"] = []
         reason = "usage_unknown"
     # Never shorten the accepted timeout. Slow completed work informs a bounded increase.
-    ceiling = max(job["runtime_timeout_seconds"], options["compile_timeout_max_seconds"])
+    ceiling = max(initial_timeout_seconds(run, job), options["compile_timeout_max_seconds"])
     current["timeout_seconds"] = min(ceiling, max(
         current["timeout_seconds"], math.ceil((seconds * 3 + 300) / 60) * 60))
     current["decisions"].append({"task_id": active["task_id"], "units": count,

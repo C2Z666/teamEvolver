@@ -54,7 +54,8 @@ def new_owner(tmp_path, *, rounds=2, mode="single", compiler=SKILL_BODY):
     owner.compiler_body = compiler
     job = repo.create_job(name="原生挖掘验收", account="default", source_uri=SOURCE,
         source_snapshot_uri=RUNS_ROOT + "/pending/source", output_uri=RUNS_ROOT + "/pending/output",
-        document_count=5, max_rounds=rounds, skip_empty_checkpoints=True, compiler_body=compiler,
+        document_count=5, max_rounds=rounds, runtime_timeout_seconds=3600,
+        skip_empty_checkpoints=True, compiler_body=compiler,
         mining_mode=mode, mining_direction="完整申请核对方法" if mode == "single" else "")
     return owner, repo, remote, job
 

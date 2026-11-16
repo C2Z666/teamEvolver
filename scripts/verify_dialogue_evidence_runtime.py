@@ -41,7 +41,7 @@ async def submit(args):
             state=SimpleNamespace(console_user={"id": "evidence-runtime-verification"}))
         result = await accept(request, services, "job.create", {
             "input_dir": args.source_uri, "source_id": args.source_id, "name": args.name,
-            "runtime_timeout_seconds": 3600, "human_checkpoints": False}, settings)
+            "human_checkpoints": False}, settings)
         print(json.dumps(result, ensure_ascii=False))
         print("job_id=ovmine-" + hashlib.sha256(result["job_id"].encode()).hexdigest()[:32])
     finally:

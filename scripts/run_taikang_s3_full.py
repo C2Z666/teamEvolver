@@ -36,8 +36,7 @@ def main():
         if settings.json().get("effective_sha256") != SHA256:
             parser.error("The API compiler does not match this checkout; load the verified implementation first.")
         body = {"name": "泰康 S3 行为 Evidence 171 条全量 · 稳健自适应",
-                "source_id": SOURCE_ID, "input_dir": INPUT_DIR, "max_rounds": 1,
-                "runtime_timeout_seconds": 3600}
+                "source_id": SOURCE_ID, "input_dir": INPUT_DIR, "max_rounds": 1}
         accepted = client.post("/api/mining/jobs", json=body,
                                headers={"Idempotency-Key": args.idempotency_key})
         accepted.raise_for_status()
