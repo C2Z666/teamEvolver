@@ -88,9 +88,6 @@ async def step(engine, job, repo, run, consume):
         if run["options"].get("adaptive_policy_version", 1) >= 2:
             key = "te-s3-" + sha(canonical([key, mode, sha(published),
                 [patches.request(u)["repair_hash"] for u in units] if mode == "field_patch" else []]))
-        vectors_only = bool(run["options"].get("output_vectors_only", 0))
-        if vectors_only:
-            key = "te-s3-" + sha(canonical([key, "output_vectors_only"]))
         root = f"{RUNS_ROOT}/{job['job_id']}/s3/{key}"
         for unit in units:
             unit["stage_hash"] = sha(published)
@@ -123,8 +120,6 @@ async def step(engine, job, repo, run, consume):
                   "preparation_seconds": elapsed(preparation_started),
                   "request": {"from": [root + "-input"], "to": root, "skill": "viking://agent/skills/" + name,
                               "instruction": instruction}}
-        if vectors_only:
-            active["request"]["output_processing_mode"] = "vectors_only"
         run["active"] = active
         await repo.save(run, **{u["packet"]["unit_id"]: u for u in units})
     if not active.get("task_id"):
@@ -138,6 +133,14 @@ async def step(engine, job, repo, run, consume):
         except HTTPException as exc:
             if exc.status_code != 404:
                 raise
+            # Reconcile the original key first: an old request may already be accepted.
+            # Only an unaccepted legacy request is migrated to the stock OV contract.
+            if "output_processing_mode" in active["request"]:
+                await engine.admission.release(key=active["key"])
+                active["request"].pop("output_processing_mode")
+                active["key"] = "te-s3-" + sha(canonical([active["key"], "stock_ov"]))
+                await repo.save(run)
+                return
             # Even at the retry limit, reconcile a possibly accepted submission first.
             if active.get("transport_attempt", 0) > run["options"]["transport_retry_attempts"]:
                 for identifier in active["units"]:

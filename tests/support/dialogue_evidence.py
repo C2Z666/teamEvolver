@@ -80,6 +80,7 @@ class CompileMemoryHost:
                 raise HTTPException(404, "synthetic not submitted")
             return {"task_id": self.submissions[key]}
         if path == "/api/v1/compile":
+            assert "output_processing_mode" not in kwargs["json"], "Stock OV rejects extension fields"
             key = kwargs["extra_headers"]["Idempotency-Key"]
             if key in self.submissions:
                 return {"task_id": self.submissions[key]}

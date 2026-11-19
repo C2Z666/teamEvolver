@@ -8,7 +8,6 @@ DEFAULTS = {
     "packets_per_compile": 3, "packet_input_chars": 12000, "packet_input_bytes": 48000,
     "compile_input_chars": 32000, "max_inflight_compiles": 1,
     "compile_input_soft_chars": 9000,
-    "output_vectors_only": 1,
     "repair_attempts_per_unit": 2, "transport_retry_attempts": 5,
     "transport_retry_delay_seconds": 60, "capacity_split_depth": 3,
     "field_repair_attempts_per_unit": 1, "adaptive_batching": 1, "adaptive_batch_max": 4,
